@@ -1,0 +1,9 @@
+pyotp
+pandas
+plotly
+streamlit
+robin_stocks
+streamlit-autorefresh
+requests==2.31.0
+python-dotenv==0.15.0
+cryptography==41.0.3

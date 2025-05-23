@@ -1,0 +1,3 @@
+.venv/*
+robinhood_secrets.py
+__pycache__/robinhood_secrets.cpython-312.pyc
