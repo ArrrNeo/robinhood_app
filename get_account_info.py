@@ -267,23 +267,25 @@ def save_to_csv(data_dict, filename):
         dict_writer.writerows(rows_to_write)
     print(f"Data saved to {filename}")
 
-def main():
-    """Main function to orchestrate the script."""
+def get_processed_positions(force_refresh=GET_LATEST_DATA):
+    """Main function to orchestrate the script, process data, and return it."""
     login_info = login_to_robinhood()
     if not login_info:
         print("Login failed. Exiting.")
-        return
+        return {} # Return empty dict on failure
 
     # Fetch or load stock data
     my_stocks_raw = fetch_or_read_data(
         robin_stocks.robinhood.account.build_holdings,
-        MY_STOCKS_FILE
+        MY_STOCKS_FILE,
+        force_fetch=force_refresh
     )
 
     # Fetch or load options data
     my_options_raw = fetch_or_read_data(
         robin_stocks.robinhood.options.get_open_option_positions,
-        MY_OPTIONS_FILE
+        MY_OPTIONS_FILE,
+        force_fetch=force_refresh
     )
 
     # Process data
@@ -296,12 +298,18 @@ def main():
     # Round numerical values
     rounded_positions = round_dict(my_total_positions, 2)
 
-    # Save to CSV
-    save_to_csv(rounded_positions, OUTPUT_CSV_FILE)
-
-    # Optional: Pretty print the final combined data
-    # print("\nFinal Processed and Rounded Positions:")
-    # pprint.PrettyPrinter(indent=4).pprint(rounded_positions)
+    return rounded_positions
 
 if __name__ == "__main__":
-    main()
+    # To run standalone and generate CSV:
+    print("Running in standalone mode to generate CSV...")
+    latest_data_to_fetch = GET_LATEST_DATA # Or set to True/False as needed for standalone run
+    positions = get_processed_positions(force_refresh=latest_data_to_fetch)
+    if positions:
+        save_to_csv(positions, OUTPUT_CSV_FILE)
+        print("\nStandalone run complete. CSV generated.")
+        # Optional: Pretty print the final combined data for console view
+        # print("\nFinal Processed and Rounded Positions (standalone):")
+        # pprint.PrettyPrinter(indent=4).pprint(positions)
+    else:
+        print("No positions data generated in standalone mode.")
