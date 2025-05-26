@@ -20,7 +20,7 @@ def write_to_file(obj, filename):
     # Ensure the directory exists
     os.makedirs(os.path.dirname(filename), exist_ok=True)
     with open(filename + '.json', 'w') as fout:
-        json.dump(obj, fout)
+        json.dump(obj, fout, indent=4)
 
 def read_from_file(filename):
     with open(filename + '.json', 'r') as fin:
