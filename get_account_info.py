@@ -5,6 +5,8 @@ import pyotp
 import pprint
 import robin_stocks
 import robinhood_secrets
+from datetime import datetime, timezone, MINYEAR
+from dateutil.relativedelta import relativedelta
 
 # --- Constants ---
 GET_LATEST_DATA = True  # Set to False to use cached data
@@ -14,8 +16,109 @@ MY_OPTIONS_FILE = JSON_DIR + 'my_options'
 FUNDAMENTALS_FILE_PREFIX = JSON_DIR + 'fundamentals_'
 OPTION_MARKET_DATA_FILE_PREFIX = JSON_DIR + 'option_market_data_'
 OUTPUT_CSV_FILE = 'my_positions.csv'
+HISTORICAL_OPTION_ORDERS_FILE = JSON_DIR + 'all_historical_option_orders'
+PERSISTED_RUN_STATE_FILE = JSON_DIR + "run_state.json"
+DEFAULT_PAST_DATE = datetime(MINYEAR, 1, 1, tzinfo=timezone.utc)
 
-# --- Helper Functions ---
+# --- Helper Functions for State Persistence and Premium Calculation ---
+def load_run_state(filepath):
+    """Loads the last run state (date and ticker premiums) from a JSON file."""
+    try:
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+            date_str = data.get("last_processed_update_date")
+            premiums = data.get("ticker_premiums", {})
+            dt = datetime.fromisoformat(date_str) if date_str else DEFAULT_PAST_DATE
+            print(f"Successfully loaded run state from {filepath}. Date: {dt}, Premiums for {len(premiums)} tickers.")
+            return {"date": dt, "premiums": premiums}
+    except FileNotFoundError:
+        print(f"Run state file not found: {filepath}. Using default empty state.")
+        return {"date": DEFAULT_PAST_DATE, "premiums": {}}
+    except (json.JSONDecodeError, ValueError) as e:
+        print(f"Error parsing data from {filepath}: {e}. Using default empty state.")
+        return {"date": DEFAULT_PAST_DATE, "premiums": {}}
+
+def save_run_state(filepath, state_data):
+    """Saves the given run state (date and ticker premiums) to a JSON file."""
+    os.makedirs(os.path.dirname(filepath), exist_ok=True) 
+    data_to_save = {
+        "last_processed_update_date": state_data["date"].isoformat() if state_data.get("date") else None,
+        "ticker_premiums": state_data.get("premiums", {})
+    }
+    try:
+        with open(filepath, 'w') as f:
+            json.dump(data_to_save, f, indent=4)
+        print(f"Successfully saved run state to {filepath}. Date: {data_to_save['last_processed_update_date']}, Premiums for {len(data_to_save['ticker_premiums'])} tickers.")
+    except IOError as e:
+        print(f"Error saving run state to {filepath}: {e}")
+
+def get_latest_order_update_date(option_orders_list):
+    """Iterates through all orders to find the most recent updated_at timestamp."""
+    latest_date_found = DEFAULT_PAST_DATE
+    found_any_valid_date = False
+    # Handle empty list
+    if not option_orders_list:
+        return latest_date_found
+
+    for order in option_orders_list:
+        updated_at_str = order.get("updated_at")
+        if not updated_at_str:
+            continue
+        try:
+            updated_at_datetime = datetime.fromisoformat(updated_at_str.replace('Z', '+00:00'))
+            if updated_at_datetime > latest_date_found:
+                latest_date_found = updated_at_datetime
+                found_any_valid_date = True
+        except ValueError:
+            print(f"Warning: Could not parse updated_at timestamp: {updated_at_str} in order {order.get('id', 'N/A')}")
+            continue 
+    
+    if not found_any_valid_date:
+        print("Warning: No valid updated_at timestamps found in any orders. Max date remains default past.")
+        
+    return latest_date_found
+
+def get_filtered_option_orders_for_ticker(all_historical_option_orders, ticker, process_orders_after_date):
+    """ Helper for premium calculation, gets relevant orders for a ticker newer than a date """
+    order_list = []
+    if not all_historical_option_orders: # Handle empty or None list
+        return order_list
+        
+    for order in all_historical_option_orders:
+        if order.get("chain_symbol") == ticker and order.get("state") == "filled":
+            order_timestamp_str = order.get("updated_at") 
+            if not order_timestamp_str:
+                # print(f"DEBUG: Order {order.get('id', 'N/A')} missing 'updated_at', cannot determine if new for premium calc. Skipping.")
+                continue
+            try:
+                order_date = datetime.fromisoformat(order_timestamp_str.replace('Z', '+00:00'))
+                if order_date > process_orders_after_date:
+                    order_list.append(order)
+            except ValueError:
+                # print(f"DEBUG: Could not parse order updated_at: {order_timestamp_str} for order {order.get('id', 'N/A')} for premium calc. Skipping.")
+                continue
+    return order_list
+
+def calculate_premium_from_new_orders(all_historical_option_orders, ticker, process_orders_after_date):
+    """Calculates the net premium from new filled orders for a specific ticker."""
+    # This function now only calculates the increment from orders newer than process_orders_after_date
+    new_orders_for_ticker = get_filtered_option_orders_for_ticker(all_historical_option_orders, ticker, process_orders_after_date)
+    premium_increment = 0
+    
+    for order in new_orders_for_ticker:
+        direction = order.get("net_amount_direction")
+        amount_str = order.get("net_amount")
+        if amount_str is None: continue
+        try:
+            amount = float(amount_str)
+            if direction == "credit":
+                premium_increment += amount
+            elif direction == "debit":
+                premium_increment -= amount
+        except ValueError: continue
+    return premium_increment
+
+# --- Original Helper Functions ---
 def write_to_file(obj, filename):
     # Ensure the directory exists
     os.makedirs(os.path.dirname(filename), exist_ok=True)
@@ -66,7 +169,7 @@ def fetch_or_read_data(fetch_function, filename_base, *args, force_fetch=GET_LAT
             write_to_file(data, filename_base)
             return data
 
-def process_stocks(my_stocks_raw):
+def process_stocks(my_stocks_raw, all_historical_option_orders, process_orders_after_date, current_run_premiums_state):
     """Processes raw stock data into a structured format."""
     processed_stocks = {}
     if not isinstance(my_stocks_raw, dict):
@@ -94,6 +197,17 @@ def process_stocks(my_stocks_raw):
         my_custom_data['option_type'] = 'N/A'
         my_custom_data['expiry'] = 'N/A'
         my_custom_data['id'] = value.get('id')
+
+        stock_ticker = my_custom_data['ticker']
+        initial_persisted_premium = current_run_premiums_state["premiums"].get(stock_ticker, 0.0)
+        premium_increment_from_new_trades = calculate_premium_from_new_orders(
+            all_historical_option_orders, 
+            stock_ticker, 
+            process_orders_after_date # This is the persisted_last_run_date
+        )
+        total_cumulative_premium = initial_persisted_premium + premium_increment_from_new_trades
+        my_custom_data['premium_earned'] = total_cumulative_premium
+        current_run_premiums_state["premiums"][stock_ticker] = total_cumulative_premium # Update the state
 
         # Fetch or read fundamentals data for each stock
         if my_custom_data['ticker']: # Ensure ticker is available
@@ -196,6 +310,7 @@ def process_options(my_options_raw):
         else:
             my_custom_data['pe_ratio'] = 0
 
+        my_custom_data['premium_earned'] = 0 # not applicable for options
         my_custom_data['portfolio_percent'] = 0  # TODO: Implement portfolio percentage calculation
         my_custom_data['type'] = 'option'
         # P&L for options: (mark_price - avg_price) * quantity * 100
@@ -251,7 +366,7 @@ def save_to_csv(data_dict, filename):
     headers = [
         'id', 'ticker', 'type', 'side', 'quantity', 'avg_price', 'mark_price',
         'equity', 'pnl', 'pnl_percent', 'portfolio_percent', 'pe_ratio',
-        'strike', 'option_type', 'expiry'
+        'strike', 'option_type', 'expiry', 'premium_earned'
     ]
 
     # Filter out rows that might be completely empty or don't have an ID.
@@ -274,7 +389,29 @@ def get_processed_positions(force_refresh=GET_LATEST_DATA):
         print("Login failed. Exiting.")
         return {} # Return empty dict on failure
 
-    # Fetch or load stock data
+    # Load run state (persisted date and ticker premiums)
+    run_state = load_run_state(PERSISTED_RUN_STATE_FILE)
+    persisted_last_run_date = run_state["date"]
+    # This will be updated and saved at the end
+    current_run_state_to_persist = {"date": persisted_last_run_date, "premiums": run_state["premiums"].copy()}
+    print(f"Premium calculation will consider historical orders newer than: {persisted_last_run_date}")
+
+    # Fetch or load all historical option orders (needed for premium calculation)
+    all_historical_option_orders = fetch_or_read_data(
+        robin_stocks.robinhood.orders.get_all_option_orders, # Function to get all orders
+        HISTORICAL_OPTION_ORDERS_FILE, # Cache filename for these orders
+        force_fetch=force_refresh # Use main GET_LATEST_DATA flag for this too
+    )
+    if all_historical_option_orders is None: # Ensure it's a list, even if empty
+        all_historical_option_orders = []
+        print("Warning: No historical option orders found or loaded.")
+
+
+    # Determine the absolute latest 'updated_at' date from the current historical dataset
+    current_max_order_update_date = get_latest_order_update_date(all_historical_option_orders)
+    print(f"Latest 'updated_at' date found in current historical option orders: {current_max_order_update_date}")
+
+    # Fetch or load current stock data
     my_stocks_raw = fetch_or_read_data(
         robin_stocks.robinhood.account.build_holdings,
         MY_STOCKS_FILE,
@@ -289,7 +426,7 @@ def get_processed_positions(force_refresh=GET_LATEST_DATA):
     )
 
     # Process data
-    processed_stocks = process_stocks(my_stocks_raw or {}) # Pass empty dict if None
+    processed_stocks = process_stocks(my_stocks_raw or {}, all_historical_option_orders, persisted_last_run_date, current_run_state_to_persist) # Pass empty dict if None
     processed_options = process_options(my_options_raw or []) # Pass empty list if None
 
     # Combine processed data
@@ -297,6 +434,25 @@ def get_processed_positions(force_refresh=GET_LATEST_DATA):
 
     # Round numerical values
     rounded_positions = round_dict(my_total_positions, 2)
+
+    # Update the date in the state to be persisted with the latest one found in this run's data
+    current_run_state_to_persist["date"] = current_max_order_update_date
+
+    # Save the updated run state (new high-water mark date and all ticker premiums)
+    if current_max_order_update_date > persisted_last_run_date or persisted_last_run_date == DEFAULT_PAST_DATE:
+        if current_max_order_update_date != DEFAULT_PAST_DATE: # Only save if we found a valid new date
+            save_run_state(PERSISTED_RUN_STATE_FILE, current_run_state_to_persist)
+        else:
+             print("No valid new execution date found in current data, run state not saved to prevent overwriting with default date.")
+    else:
+        # If date didn't advance, still save if premiums changed (e.g. re-processing same data, but premiums dict could be different if logic changed)
+        # For simplicity now, we are only triggering save if date advances or it's first valid run.
+        # A more robust check for changed premiums would be: if run_state["premiums"] != current_run_state_to_persist["premiums"] ... but this is a deep dict compare.
+        print(f"Max order update date ({current_max_order_update_date}) not newer than persisted date ({persisted_last_run_date}). Run state for premiums might not be saved unless it was first run.")
+        # To ensure premiums are always updated if processing happened:
+        if run_state["premiums"] != current_run_state_to_persist["premiums"]:
+             print("Ticker premiums have changed, saving updated run state.")
+             save_run_state(PERSISTED_RUN_STATE_FILE, current_run_state_to_persist)
 
     return rounded_positions
 

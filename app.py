@@ -74,7 +74,7 @@ def fetch_data(force_refresh=False):
     # Define a desired column order
     # Make sure 'notes' is one of the first few columns for visibility
     desired_columns = ['ticker', 'notes', 'type', 'side', 'quantity', 'avg_price', 'mark_price',
-                       'equity', 'pnl', 'pnl_percent', 'portfolio_percent', 'pe_ratio',
+                       'equity', 'pnl', 'premium_earned', 'pnl_percent', 'portfolio_percent', 'pe_ratio',
                        'strike', 'option_type', 'expiry']
     
     # Reorder columns, adding any missing ones (e.g., if a new field appears from source)
