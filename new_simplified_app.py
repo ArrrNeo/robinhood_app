@@ -4,15 +4,22 @@ import pandas as pd
 import streamlit as st
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 
+# Import the function
+from get_account_info import get_processed_positions
+
 st.set_page_config(layout="wide")
 st.title("📊 Interactive Table with Notes")
 
-# Load data from CSV file
-data_path = "my_positions.csv"
-df = pd.read_csv(data_path)
+# Call get_processed_positions to get the latest data (handles caching/refresh logic)
+positions_dict = get_processed_positions()
+if not positions_dict:
+    st.error("No positions data available.")
+    st.stop()
+
+df = pd.DataFrame.from_dict(positions_dict, orient='index')
 
 # Load notes from JSON file or initialize empty dictionary if not exists
-notes_path = "notes_sample.json"
+notes_path = "json/notes.json"
 if os.path.exists(notes_path):
     with open(notes_path, "r") as f:
         notes_dict = json.load(f)

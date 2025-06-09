@@ -13,32 +13,32 @@ pp = pprint.PrettyPrinter(indent=4)
 def load_notes():
     """Loads notes from the JSON file."""
     abs_path = os.path.abspath(NOTES_FILE)
-    print(f"LOAD_NOTES: Attempting to load notes from: {abs_path}")
+    # print(f"LOAD_NOTES: Attempting to load notes from: {abs_path}")
     if os.path.exists(NOTES_FILE):
         try:
             with open(NOTES_FILE, 'r') as f:
                 notes_data = json.load(f)
-                print(f"LOAD_NOTES: Successfully loaded notes: {notes_data}")
+                # print(f"LOAD_NOTES: Successfully loaded notes: {notes_data}")
                 return notes_data
         except json.JSONDecodeError:
-            print(f"LOAD_NOTES: Error decoding JSON from {NOTES_FILE}. Returning empty notes.")
+            # print(f"LOAD_NOTES: Error decoding JSON from {NOTES_FILE}. Returning empty notes.")
             return {} # Return empty if file is corrupted
         except Exception as e:
-            print(f"LOAD_NOTES: An unexpected error occurred while loading notes from {abs_path}: {e}")
+            # print(f"LOAD_NOTES: An unexpected error occurred while loading notes from {abs_path}: {e}")
             return {}
     else:
-        print(f"LOAD_NOTES: Notes file not found at {abs_path}. Returning empty notes.")
+        # print(f"LOAD_NOTES: Notes file not found at {abs_path}. Returning empty notes.")
         return {}
 
 def save_notes(notes_data):
     """Saves notes to the JSON file."""
     abs_path = os.path.abspath(NOTES_FILE)
-    print(f"SAVE_NOTES: Attempting to save notes to: {abs_path}")
-    print(f"SAVE_NOTES: Data to save: {notes_data}")
+    # print(f"SAVE_NOTES: Attempting to save notes to: {abs_path}")
+    # print(f"SAVE_NOTES: Data to save: {notes_data}")
     try:
         with open(NOTES_FILE, 'w') as f:
             json.dump(notes_data, f, indent=4)
-        print(f"SAVE_NOTES: Successfully saved notes to {abs_path}.")
+        # print(f"SAVE_NOTES: Successfully saved notes to {abs_path}.")
     except IOError as e:
         print(f"SAVE_NOTES: IOError saving notes to {abs_path}: {e}")
     except OSError as e:
@@ -100,7 +100,7 @@ if 'notes' not in st.session_state:
 
 # Automatically fetch data using local cache if the dataframe is empty on initial load/refresh
 if st.session_state.positions_df.empty:
-    print("DEBUG: positions_df is empty on initial load. Attempting to fetch data from cache.")
+    # print("DEBUG: positions_df is empty on initial load. Attempting to fetch data from cache.")
     fetch_data(force_refresh=False) # Simulate "Refresh View (use local cache)"
 
 # --- UI Elements ---
@@ -139,40 +139,40 @@ else:
         height=600 
     )
 
-    print("DEBUG: --- After st.data_editor ---")
-    print("DEBUG: edited_df.head(5):")
-    print(edited_df.head(5))
-    print("DEBUG: edited_df.index:")
-    print(edited_df.index)
-    print("DEBUG: --- End After st.data_editor ---")
+    # print("DEBUG: --- After st.data_editor ---")
+    # print("DEBUG: edited_df.head(5):")
+    # print(edited_df.head(5))
+    # print("DEBUG: edited_df.index:")
+    # print(edited_df.index)
+    # print("DEBUG: --- End After st.data_editor ---")
 
     # --- Save Changes (Notes) ---
     # Compare the edited DataFrame with the original session state to find changes in notes
     # This is crucial because st.data_editor returns the entire modified DataFrame on any change.
     # We only want to save if notes have actually changed.
     notes_changed = False
-    print(f"DEBUG: Just before checking 'ticker' in edited_df.columns. edited_df columns: {edited_df.columns.tolist()}")
-    print(f"DEBUG: Current st.session_state.notes: {st.session_state.notes}")
+    # print(f"DEBUG: Just before checking 'ticker' in edited_df.columns. edited_df columns: {edited_df.columns.tolist()}")
+    # print(f"DEBUG: Current st.session_state.notes: {st.session_state.notes}")
 
     if 'ticker' in edited_df.columns:
-        print("DEBUG: Entered 'ticker' in edited_df.columns block.")
+        # print("DEBUG: Entered 'ticker' in edited_df.columns block.")
         for index, row in edited_df.iterrows():
             position_ticker = str(row['ticker'])
             new_note = row['notes']
             existing_note = st.session_state.notes.get(position_ticker, '')
             
-            print(f"DEBUG: Processing row index {index}, ticker {position_ticker}. New note: '{new_note}', Existing note: '{existing_note}'")
+            # print(f"DEBUG: Processing row index {index}, ticker {position_ticker}. New note: '{new_note}', Existing note: '{existing_note}'")
 
             if existing_note != new_note:
-                print(f"DEBUG: Note changed for ticker {position_ticker}. Updating st.session_state.notes.")
+                # print(f"DEBUG: Note changed for ticker {position_ticker}. Updating st.session_state.notes.")
                 st.session_state.notes[position_ticker] = new_note
                 notes_changed = True
-            else:
-                print(f"DEBUG: Note for ticker {position_ticker} is unchanged.")
+            # else:
+            #     print(f"DEBUG: Note for ticker {position_ticker} is unchanged.")
         
-        print(f"DEBUG: After loop. notes_changed = {notes_changed}")
+        # print(f"DEBUG: After loop. notes_changed = {notes_changed}")
         if notes_changed:
-            print(f"MAIN_LOGIC: Notes changed. Current st.session_state.notes before saving: {st.session_state.notes}")
+            # print(f"MAIN_LOGIC: Notes changed. Current st.session_state.notes before saving: {st.session_state.notes}")
             save_notes(st.session_state.notes)
             st.toast("Notes saved!")
             if 'ticker' in st.session_state.positions_df.columns:
