@@ -7,7 +7,6 @@ import robin_stocks
 import robinhood_secrets
 from datetime import datetime, timezone, MINYEAR
 
-GET_LATEST_DATA = True  # Set to False to use cached data
 DEFAULT_PAST_DATE = datetime(MINYEAR, 1, 1, tzinfo=timezone.utc)
 
 def load_run_state(filepath):
@@ -20,7 +19,9 @@ def load_run_state(filepath):
             premiums = data.get("ticker_premiums", {})
             pos_dt = datetime.fromisoformat(pos_date_str) if pos_date_str else DEFAULT_PAST_DATE
             order_dt = datetime.fromisoformat(order_date_str) if order_date_str else DEFAULT_PAST_DATE
-            print(f"Successfully loaded run state from {filepath}. Position fetch: {pos_dt}, Order processed: {order_dt}, Premiums for {len(premiums)} tickers.")
+            print(f"Successfully loaded run state from {filepath}")
+            print(f"\tPosition fetch date : {pos_dt}")
+            print(f"\tOrder processed date: {order_dt}")
             return {"position_date": pos_dt, "order_date": order_dt, "premiums": premiums}
     except FileNotFoundError:
         print(f"Run state file not found: {filepath}. Using default empty state.")
@@ -112,27 +113,11 @@ def round_dict(value, num_decimals=2):
     else:
         return value
     
-def fetch_or_read_data(fetch_function, filename_base, *args, force_fetch=GET_LATEST_DATA):
+def fetch_n_save_data(fetch_function, filename_base, *args, **kwargs):
     """Fetches data using the provided function or reads from cache."""
     # Construct the full filename with .json extension for reading/writing
     json_filename = filename_base + '.json'
-    if force_fetch:
-        print(f"Fetching latest data for {filename_base}...")
-        data = fetch_function(*args)
-        write_to_file(data, filename_base) # write_to_file appends .json
-        return data
-    else:
-        print(f"Reading data from cache for {filename_base}...")
-        try:
-            # read_from_file expects filename without .json, it appends it.
-            return read_from_file(filename_base)
-        except FileNotFoundError:
-            print(f"Cache file {json_filename} not found. Fetching fresh data.")
-            data = fetch_function(*args)
-            write_to_file(data, filename_base)
-            return data
-        except json.JSONDecodeError:
-            print(f"Error decoding JSON from {json_filename}. Fetching fresh data.")
-            data = fetch_function(*args)
-            write_to_file(data, filename_base)
-            return data
+    print(f"Fetching latest data for {filename_base}...")
+    data = fetch_function(*args, **kwargs)
+    write_to_file(data, filename_base) # write_to_file appends .json
+    return data

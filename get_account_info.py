@@ -10,10 +10,10 @@ JSON_DIR = 'json/'
 MY_STOCKS_FILE = JSON_DIR + 'my_stocks'
 MY_OPTIONS_FILE = JSON_DIR + 'my_options'
 FUNDAMENTALS_FILE_PREFIX = JSON_DIR + 'fundamentals_'
-OPTION_MARKET_DATA_FILE_PREFIX = JSON_DIR + 'option_market_data_'
-OUTPUT_CSV_FILE = 'my_positions.csv'
-HISTORICAL_OPTION_ORDERS_FILE = JSON_DIR + 'all_historical_option_orders'
 PERSISTED_RUN_STATE_FILE = JSON_DIR + "run_state.json"
+OPTION_MARKET_DATA_FILE_PREFIX = JSON_DIR + 'option_market_data_'
+HISTORICAL_OPTION_ORDERS_FILE = JSON_DIR + 'all_historical_option_orders'
+OUTPUT_CSV_FILE = 'my_positions.csv'
 
 def get_latest_order_update_date(option_orders_list):
     """Iterates through all orders to find the most recent updated_at timestamp."""
@@ -114,22 +114,21 @@ def process_stocks(my_stocks_raw, all_historical_option_orders, process_orders_a
         my_custom_data['id'] = value.get('id')
 
         stock_ticker = my_custom_data['ticker']
-        initial_persisted_premium = current_run_state["premiums"].get(stock_ticker, 0.0)
-        premium_increment_from_new_trades = calculate_premium_from_new_orders(all_historical_option_orders,
-                                                                              stock_ticker,
-                                                                              process_orders_after_date # This is the persisted_last_run_date
-                                                                              )
-        total_cumulative_premium = initial_persisted_premium + premium_increment_from_new_trades
+        total_cumulative_premium = current_run_state["premiums"].get(stock_ticker, 0.0)
+        if len(all_historical_option_orders) > 0:
+            premium_increment_from_new_trades = calculate_premium_from_new_orders(all_historical_option_orders,
+                                                                                  stock_ticker,
+                                                                                  process_orders_after_date)
+            total_cumulative_premium = total_cumulative_premium + premium_increment_from_new_trades
+            current_run_state["premiums"][stock_ticker] = total_cumulative_premium # Update the state
         my_custom_data['premium_earned'] = total_cumulative_premium
-        current_run_state["premiums"][stock_ticker] = total_cumulative_premium # Update the state
 
         # Fetch or read fundamentals data for each stock
         if my_custom_data['ticker']: # Ensure ticker is available
             fundamentals_filename_base = FUNDAMENTALS_FILE_PREFIX + my_custom_data['ticker']
-            helpers.fetch_or_read_data(lambda ticker: robin_stocks.robinhood.stocks.get_fundamentals(ticker),
-                                       fundamentals_filename_base,
-                                       my_custom_data['ticker'], # Argument for get_fundamentals
-                                       force_fetch=helpers.GET_LATEST_DATA)
+            helpers.fetch_n_save_data(robin_stocks.robinhood.stocks.get_fundamentals,
+                                      fundamentals_filename_base,
+                                      my_custom_data['ticker'])
             # Note: The fetched fundamentals are written to file but not directly used in my_custom_data here.
             # This matches original logic. If it needs to be used, it should be read back and processed.
 
@@ -185,10 +184,9 @@ def process_options(my_options_raw):
 
         # Fetch or read option market data
         option_market_data_filename_base = OPTION_MARKET_DATA_FILE_PREFIX + option_id
-        market_data_list = helpers.fetch_or_read_data(robin_stocks.robinhood.options.get_option_market_data_by_id,
-                                                      option_market_data_filename_base,
-                                                      option_id, # Argument for get_option_market_data_by_id
-                                                      force_fetch=helpers.GET_LATEST_DATA)
+        market_data_list = helpers.fetch_n_save_data(robin_stocks.robinhood.options.get_option_market_data_by_id,
+                                                     option_market_data_filename_base,
+                                                     option_id)
 
         # Ensure market_data_list is not empty and contains data
         if not market_data_list or not isinstance(market_data_list, list) or not market_data_list[0]:
@@ -207,10 +205,9 @@ def process_options(my_options_raw):
         # Fetch or read fundamentals data for the underlying ticker
         if my_custom_data['ticker']:
             fundamentals_filename_base = FUNDAMENTALS_FILE_PREFIX + my_custom_data['ticker']
-            fundamentals_data_list = helpers.fetch_or_read_data(lambda ticker: robin_stocks.robinhood.stocks.get_fundamentals(ticker),
-                                                                fundamentals_filename_base,
-                                                                my_custom_data['ticker'],
-                                                                force_fetch=helpers.GET_LATEST_DATA)
+            fundamentals_data_list = helpers.fetch_n_save_data(robin_stocks.robinhood.stocks.get_fundamentals,
+                                                               fundamentals_filename_base,
+                                                               my_custom_data['ticker'])
             if fundamentals_data_list and fundamentals_data_list[0] and fundamentals_data_list[0].get('pe_ratio'):
                 my_custom_data['pe_ratio'] = float(fundamentals_data_list[0]['pe_ratio'])
             else:
@@ -248,7 +245,7 @@ def process_options(my_options_raw):
         processed_options[my_custom_data['id']] = my_custom_data
     return processed_options
 
-def get_processed_positions(force_refresh=helpers.GET_LATEST_DATA):
+def get_processed_positions():
     """Main function to orchestrate the script, process data, and return it."""
     login_info = helpers.login_to_robinhood()
     if not login_info:
@@ -265,10 +262,9 @@ def get_processed_positions(force_refresh=helpers.GET_LATEST_DATA):
     # Decide whether to fetch from API or use CSV
     should_fetch = (persisted_last_position_date < five_minutes_ago)
 
-    print ("current_time: ", current_time)
+    print ("current_time    : ", current_time)
     print ("five_minutes_ago: ", five_minutes_ago)
-    print ("persisted_last_position_date: ", persisted_last_position_date)
-    print ("should_fetch: ", should_fetch)
+    print ("should_fetch    : ", should_fetch)
 
     if not should_fetch:
         # Try to load from CSV
@@ -295,25 +291,18 @@ def get_processed_positions(force_refresh=helpers.GET_LATEST_DATA):
     }
     print(f"Premium calculation will consider historical orders newer than: {persisted_last_order_date}")
 
-    # todo:
     # fetch positions from Robinhood API filtering:
     # after persisted_last_order_date or DEFAULT_PAST_DATE (which ever is later)
     # execution state = filled
+    last_order_date_plus_1 = (persisted_last_order_date + timedelta(microseconds=1)).isoformat().replace('+00:00', 'Z')
     # and append the new orders to HISTORICAL_OPTION_ORDERS_FILE
-    all_historical_option_orders = helpers.fetch_or_read_data(robin_stocks.robinhood.orders.get_all_option_orders,
-                                                              HISTORICAL_OPTION_ORDERS_FILE,
-                                                              force_fetch=force_refresh)
+    all_historical_option_orders = helpers.fetch_n_save_data(robin_stocks.robinhood.orders.get_all_option_orders,
+                                                             HISTORICAL_OPTION_ORDERS_FILE,
+                                                             start_date=last_order_date_plus_1)
     if all_historical_option_orders is None: all_historical_option_orders = []
 
-    current_max_order_update_date = get_latest_order_update_date(all_historical_option_orders)
-    print(f"Latest 'updated_at' date in current historical option data: {current_max_order_update_date}")
-
-    my_stocks_raw = helpers.fetch_or_read_data(robin_stocks.robinhood.account.build_holdings,
-                                               MY_STOCKS_FILE,
-                                               force_fetch=force_refresh)
-    my_options_raw = helpers.fetch_or_read_data(robin_stocks.robinhood.options.get_open_option_positions,
-                                                MY_OPTIONS_FILE,
-                                                force_fetch=force_refresh)
+    my_stocks_raw = helpers.fetch_n_save_data(robin_stocks.robinhood.account.build_holdings, MY_STOCKS_FILE)
+    my_options_raw = helpers.fetch_n_save_data(robin_stocks.robinhood.options.get_open_option_positions, MY_OPTIONS_FILE)
 
     processed_stocks = process_stocks(my_stocks_raw or {}, all_historical_option_orders, persisted_last_order_date, current_run_state_to_persist)
     processed_options = process_options(my_options_raw or [])
@@ -324,6 +313,12 @@ def get_processed_positions(force_refresh=helpers.GET_LATEST_DATA):
     # Save to CSV
     helpers.save_to_csv(rounded_positions, OUTPUT_CSV_FILE)
     print(f"Saved latest positions to CSV: {OUTPUT_CSV_FILE}")
+
+    if len(all_historical_option_orders) > 0:
+        current_max_order_update_date = get_latest_order_update_date(all_historical_option_orders)
+        print(f"Latest 'updated_at' date in current historical option data: {current_max_order_update_date}")
+    else:
+        current_max_order_update_date = persisted_last_order_date
 
     # Update the order date in the state to be persisted with the latest one found in this run's data
     current_run_state_to_persist["order_date"] = current_max_order_update_date
@@ -344,5 +339,4 @@ def get_processed_positions(force_refresh=helpers.GET_LATEST_DATA):
     return rounded_positions
 
 if __name__ == "__main__":
-    latest_data_to_fetch = helpers.GET_LATEST_DATA # Or set to True/False as needed for standalone run
-    get_processed_positions(force_refresh=latest_data_to_fetch)
+    get_processed_positions()
