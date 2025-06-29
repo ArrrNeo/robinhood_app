@@ -6,13 +6,11 @@ import robin_stocks
 from datetime import datetime, timezone, timedelta
 
 # --- Constants ---
-JSON_DIR = 'json/'
-MY_STOCKS_FILE = JSON_DIR + 'my_stocks'
-MY_OPTIONS_FILE = JSON_DIR + 'my_options'
-FUNDAMENTALS_FILE_PREFIX = JSON_DIR + 'fundamentals_'
-PERSISTED_RUN_STATE_FILE = JSON_DIR + "run_state.json"
-OPTION_MARKET_DATA_FILE_PREFIX = JSON_DIR + 'option_market_data_'
-HISTORICAL_OPTION_ORDERS_FILE = JSON_DIR + 'all_historical_option_orders'
+MY_STOCKS_FILE = helpers.JSON_DIR + 'my_stocks'
+MY_OPTIONS_FILE = helpers.JSON_DIR + 'my_options'
+FUNDAMENTALS_FILE_PREFIX = helpers.JSON_DIR + 'fundamentals_'
+OPTION_MARKET_DATA_FILE_PREFIX = helpers.JSON_DIR + 'option_market_data_'
+HISTORICAL_OPTION_ORDERS_FILE = helpers.JSON_DIR + 'all_historical_option_orders'
 OUTPUT_CSV_FILE = 'my_positions.csv'
 
 def get_latest_order_update_date(option_orders_list):
@@ -111,22 +109,47 @@ def calculate_premium_from_new_orders(all_historical_option_orders, ticker, proc
 def process_stocks(my_stocks_raw, all_historical_option_orders, process_orders_after_date, current_run_state):
     """Processes raw stock data into a structured format."""
     processed_stocks = {}
-    if not isinstance(my_stocks_raw, dict):
-        print("Warning: my_stocks_raw is not a dictionary. Skipping stock processing.")
-        return processed_stocks
+    
+    total_equity = helpers.get_total_equity()
+    cash = helpers.get_cash()
+    
+    for item in my_stocks_raw:
+        # It is possible for positions_data to be [None]
+        if not item:
+            continue
 
-    for key, value in my_stocks_raw.items():
         my_custom_data = {}
-        my_custom_data['ticker'] = key
-        my_custom_data['avg_price'] = float(value.get('average_buy_price', 0))
-        my_custom_data['mark_price'] = float(value.get('price', 0))
-        my_custom_data['quantity'] = float(value.get('quantity', 0))
-        my_custom_data['equity'] = float(value.get('equity', 0))
-        my_custom_data['pe_ratio'] = float(value.get('pe_ratio', 0)) if value.get('pe_ratio') else 0
-        my_custom_data['pnl_percent'] = float(value.get('percent_change', 0))
-        my_custom_data['portfolio_percent'] = float(value.get('percentage', 0))
+        instrument_data = robin_stocks.robinhood.account.get_instrument_by_url(item['instrument'])
+        symbol = instrument_data['symbol']
+        fundamental_data = robin_stocks.robinhood.account.get_fundamentals(symbol)[0]
+        price = float(robin_stocks.robinhood.account.get_latest_price(instrument_data['symbol'])[0])
+        quantity = float(item['quantity'])
+        equity = quantity * price
+        average_buy_price = float(item['average_buy_price'])
+        equity_change = (quantity * price) - (quantity * average_buy_price)
+        percentage = quantity * price * 100 / total_equity
+        intraday_average_buy_price = float(item['intraday_average_buy_price'])
+        if (average_buy_price == 0.0):
+            percent_change = 0.0
+        else:
+            percent_change = (price - average_buy_price) * 100 / average_buy_price
+        if (intraday_average_buy_price == 0.0):
+            intraday_percent_change = 0.0
+        else:
+            intraday_percent_change = (float(price) - intraday_average_buy_price) * 100 / intraday_average_buy_price
+        my_custom_data['ticker'] = symbol
+        my_custom_data['name'] = robin_stocks.robinhood.account.get_name_by_symbol(symbol)
+        my_custom_data['mark_price'] = price
+        my_custom_data['quantity'] = quantity
+        my_custom_data['avg_price'] = average_buy_price
+        my_custom_data['equity'] = equity
+        my_custom_data['pnl_percent'] = percent_change
+        my_custom_data['intraday_percent_change'] = intraday_percent_change
+        my_custom_data['pnl'] = equity_change
         my_custom_data['type'] = 'stock'
-        my_custom_data['pnl'] = (my_custom_data['mark_price'] - my_custom_data['avg_price']) * my_custom_data['quantity']
+        my_custom_data['id'] = instrument_data['id']
+        my_custom_data['pe_ratio'] = float(fundamental_data['pe_ratio']) if fundamental_data['pe_ratio'] else 0.0
+        my_custom_data['portfolio_percent'] = percentage
         if my_custom_data['equity'] > 0:
             my_custom_data['side'] = 'long'
         else:
@@ -135,29 +158,20 @@ def process_stocks(my_stocks_raw, all_historical_option_orders, process_orders_a
         my_custom_data['strike'] = 0
         my_custom_data['option_type'] = 'N/A'
         my_custom_data['expiry'] = 'N/A'
-        my_custom_data['id'] = value.get('id')
-
-        stock_ticker = my_custom_data['ticker']
-        total_cumulative_premium = current_run_state["premiums"].get(stock_ticker, 0.0)
+        total_cumulative_premium = current_run_state["premiums"].get(symbol, 0.0)
         if len(all_historical_option_orders) > 0:
-            premium_increment_from_new_trades = calculate_premium_from_new_orders(all_historical_option_orders,
-                                                                                  stock_ticker,
-                                                                                  process_orders_after_date)
+            premium_increment_from_new_trades = calculate_premium_from_new_orders(all_historical_option_orders, symbol, process_orders_after_date)
             total_cumulative_premium = total_cumulative_premium + premium_increment_from_new_trades
-            current_run_state["premiums"][stock_ticker] = total_cumulative_premium # Update the state
+            current_run_state["premiums"][symbol] = total_cumulative_premium # Update the state
         my_custom_data['premium_earned'] = total_cumulative_premium
+        processed_stocks[my_custom_data['id']] = my_custom_data
 
-        # Fetch or read fundamentals data for each stock
-        if my_custom_data['ticker']: # Ensure ticker is available
-            fundamentals_filename_base = FUNDAMENTALS_FILE_PREFIX + my_custom_data['ticker']
-            helpers.fetch_n_save_data(robin_stocks.robinhood.stocks.get_fundamentals,
-                                      fundamentals_filename_base,
-                                      my_custom_data['ticker'])
-            # Note: The fetched fundamentals are written to file but not directly used in my_custom_data here.
-            # This matches original logic. If it needs to be used, it should be read back and processed.
+    my_custom_data = {}
+    my_custom_data['ticker'] = 'cash'
+    my_custom_data['equity'] = cash
+    my_custom_data['portfolio_percent'] = cash * 100 / total_equity
+    processed_stocks['cash'] = my_custom_data
 
-        if my_custom_data['id']: # Ensure ID is available before adding to dict
-            processed_stocks[my_custom_data['id']] = my_custom_data
     return processed_stocks
 
 def parse_occ_symbol(occ_symbol_full):
@@ -277,7 +291,7 @@ def get_processed_positions():
         return {} # Return empty dict on failure
 
     # Load run state (persisted dates and ticker premiums)
-    run_state = helpers.load_run_state(PERSISTED_RUN_STATE_FILE)
+    run_state = helpers.load_run_state(helpers.PERSISTED_RUN_STATE_FILE)
     persisted_last_position_date = run_state["position_date"]
     persisted_last_order_date = run_state["order_date"]
     current_time = datetime.now(timezone.utc)
@@ -291,20 +305,7 @@ def get_processed_positions():
     print ("should_fetch    : ", should_fetch)
 
     if not should_fetch:
-        # Try to load from CSV
-        try:
-            with open(OUTPUT_CSV_FILE, 'r') as csvfile:
-                reader = csv.DictReader(csvfile)
-                positions_dict = {row['id']: {k: (float(v) if v.replace('.', '', 1).isdigit() else v) for k, v in row.items()} for row in reader if row.get('id')}
-            if positions_dict:
-                print(f"Loaded positions from CSV ({OUTPUT_CSV_FILE}) as last fetch was less than 5 minutes ago.")
-                return positions_dict
-            else:
-                print(f"CSV file {OUTPUT_CSV_FILE} is empty, will fetch from API.")
-        except FileNotFoundError:
-            print(f"CSV file {OUTPUT_CSV_FILE} not found, will fetch from API.")
-        except Exception as e:
-            print(f"Error loading positions from CSV: {e}. Will fetch from API.")
+        return helpers.read_from_csv(OUTPUT_CSV_FILE)
 
     # If we reach here, we need to fetch from API
     print("Fetching positions from Robinhood APIs...")
@@ -325,7 +326,7 @@ def get_processed_positions():
                                                              start_date=last_order_date_plus_1)
     if all_historical_option_orders is None: all_historical_option_orders = []
 
-    my_stocks_raw = helpers.fetch_n_save_data(robin_stocks.robinhood.account.build_holdings, MY_STOCKS_FILE)
+    my_stocks_raw = helpers.fetch_n_save_data(robin_stocks.robinhood.account.get_open_stock_positions, MY_STOCKS_FILE)
     my_options_raw = helpers.fetch_n_save_data(robin_stocks.robinhood.options.get_open_option_positions, MY_OPTIONS_FILE)
 
     processed_stocks = process_stocks(my_stocks_raw or {}, all_historical_option_orders, persisted_last_order_date, current_run_state_to_persist)
@@ -347,18 +348,7 @@ def get_processed_positions():
     # Update the order date in the state to be persisted with the latest one found in this run's data
     current_run_state_to_persist["order_date"] = current_max_order_update_date
 
-    # Save the updated run state (new high-water mark date and all ticker premiums)
-    if current_max_order_update_date > persisted_last_order_date or persisted_last_order_date == helpers.DEFAULT_PAST_DATE:
-        if current_max_order_update_date != helpers.DEFAULT_PAST_DATE:
-            helpers.save_run_state(PERSISTED_RUN_STATE_FILE, current_run_state_to_persist)
-        else:
-            print("No valid new execution date found in current data, run state not saved to prevent overwriting with default date.")
-    elif run_state["premiums"] != current_run_state_to_persist["premiums"]:
-        print("Ticker premiums have changed, saving updated run state.")
-        helpers.save_run_state(PERSISTED_RUN_STATE_FILE, current_run_state_to_persist)
-    elif persisted_last_position_date < five_minutes_ago:
-        print("Positions have changed, saving updated run state.")
-        helpers.save_run_state(PERSISTED_RUN_STATE_FILE, current_run_state_to_persist)
+    helpers.update_state(current_run_state_to_persist)
 
     return rounded_positions
 

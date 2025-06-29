@@ -5,8 +5,10 @@ import json
 import pyotp
 import robin_stocks
 import robinhood_secrets
-from datetime import datetime, timezone, MINYEAR
+from datetime import datetime, timezone, timedelta, MINYEAR
 
+JSON_DIR = 'json/'
+PERSISTED_RUN_STATE_FILE = JSON_DIR + "run_state.json"
 DEFAULT_PAST_DATE = datetime(MINYEAR, 1, 1, tzinfo=timezone.utc)
 
 def load_run_state(filepath):
@@ -121,3 +123,50 @@ def fetch_n_save_data(fetch_function, filename_base, *args, **kwargs):
     data = fetch_function(*args, **kwargs)
     write_to_file(data, filename_base) # write_to_file appends .json
     return data
+
+def read_from_csv(csv_file):
+    # Try to load from CSV
+    try:
+        with open(csv_file, 'r') as csvfile:
+            reader = csv.DictReader(csvfile)
+            positions_dict = {row['id']: {k: (float(v) if v.replace('.', '', 1).isdigit() else v) for k, v in row.items()} for row in reader if row.get('id')}
+        if positions_dict:
+            print(f"Loaded positions from CSV ({csv_file}) as last fetch was less than 5 minutes ago.")
+            return positions_dict
+        else:
+            print(f"CSV file {csv_file} is empty, will fetch from API.")
+    except FileNotFoundError:
+        print(f"CSV file {csv_file} not found, will fetch from API.")
+    except Exception as e:
+        print(f"Error loading positions from CSV: {e}. Will fetch from API.")
+
+def update_state(current_run_state_to_persist):
+    run_state = load_run_state(PERSISTED_RUN_STATE_FILE)
+    current_time = datetime.now(timezone.utc)
+    five_minutes_ago = current_time - timedelta(minutes=5)
+    # Save the updated run state (new high-water mark date and all ticker premiums)
+    if current_run_state_to_persist["order_date"] > run_state["order_date"] or run_state["order_date"] == DEFAULT_PAST_DATE:
+        if current_run_state_to_persist["order_date"] != DEFAULT_PAST_DATE:
+            save_run_state(PERSISTED_RUN_STATE_FILE, current_run_state_to_persist)
+        else:
+            print("No valid new execution date found in current data, run state not saved to prevent overwriting with default date.")
+    elif run_state["premiums"] != current_run_state_to_persist["premiums"]:
+        print("Ticker premiums have changed, saving updated run state.")
+        save_run_state(PERSISTED_RUN_STATE_FILE, current_run_state_to_persist)
+    elif run_state["position_date"] < five_minutes_ago:
+        print("Positions have changed, saving updated run state.")
+        save_run_state(PERSISTED_RUN_STATE_FILE, current_run_state_to_persist)
+
+def get_total_equity():
+    total_equity = 0
+    portfolios_data = robin_stocks.robinhood.account.load_portfolio_profile()
+    if portfolios_data['extended_hours_equity'] is not None:
+        total_equity = max(float(portfolios_data['equity']), float(portfolios_data['extended_hours_equity']))
+    else:
+        total_equity = float(portfolios_data['equity'])
+    return total_equity
+
+def get_cash():
+    accounts_data = robin_stocks.robinhood.account.load_account_profile()
+    cash = float(accounts_data['cash']) + float(accounts_data['uncleared_deposits'])
+    return cash
