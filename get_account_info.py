@@ -62,9 +62,31 @@ def get_filtered_option_orders_for_ticker(all_historical_option_orders, ticker, 
                 continue
     return order_list
 
-# todo:
-# add premium for sell to open and reduce premium for buy to close.
-# other orders are just regular trades.
+# logic:
+#       Identify if option order is eligible for earned premium calculation
+#       only orders that were one of following, eligible
+#       1. sell to open (STO)
+#       2, buy to close (BTC)
+#       3. ROLL
+#
+#       An option order will have single or multiple entry in "legs" array.
+#       entry in "legs" array have
+#           "position_effect" = "open" or "close"
+#           "side" = "sell" or "buy"
+#       order is STO if it has a leg that is "side" = "sell" and "position_effect" = "open"
+#       order is BTC if it has a leg that is "side" = "buy" and "position_effect" = "close"
+#       order is ROLL if has both BTC and STO legs
+#       only add or subtract premium of above kind of orders
+def is_order_eligible_for_premium(order):
+    if len(order.get("legs", [])) <= 0:
+        return False
+
+    legs = order.get("legs")
+    sell_to_open = any(leg["side"] == "sell" and leg["position_effect"] == "open" for leg in legs)
+    buy_to_close = any(leg["side"] == "buy" and leg["position_effect"] == "close" for leg in legs)
+
+    return sell_to_open or buy_to_close
+
 def calculate_premium_from_new_orders(all_historical_option_orders, ticker, process_orders_after_date):
     """Calculates the net premium from new filled orders for a specific ticker."""
     # This function now only calculates the increment from orders newer than process_orders_after_date
@@ -72,6 +94,8 @@ def calculate_premium_from_new_orders(all_historical_option_orders, ticker, proc
     premium_increment = 0
 
     for order in new_orders_for_ticker:
+        if not is_order_eligible_for_premium(order):
+            continue
         direction = order.get("net_amount_direction")
         amount_str = order.get("net_amount")
         if amount_str is None: continue
