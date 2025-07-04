@@ -2,3 +2,5 @@
 *.json
 __pycache__/*
 cache/INDIVIDUAL/positions.csv
+cache/ROTH_IRA/positions.csv
+cache/TRADITIONAL_IRA/positions.csv
