@@ -4,12 +4,17 @@ import csv
 import json
 import pyotp
 import robin_stocks
-import robinhood_secrets
 from datetime import datetime, timezone, timedelta, MINYEAR
 
-JSON_DIR = 'json/'
-PERSISTED_RUN_STATE_FILE = JSON_DIR + "run_state.json"
+os.makedirs("cache/INDIVIDUAL", exist_ok=True)
+os.makedirs("cache/ROTH_IRA", exist_ok=True)
+os.makedirs("cache/TRADITIONAL_IRA", exist_ok=True)
+
+CACHE_DIR = 'cache'
 DEFAULT_PAST_DATE = datetime(MINYEAR, 1, 1, tzinfo=timezone.utc)
+
+SECRETS_FILE = "robinhood_secrets.json"
+SECRETS = json.load(open(SECRETS_FILE, 'r'))
 
 def load_run_state(filepath):
     """Loads the last run state (two dates and ticker premiums) from a JSON file."""
@@ -61,10 +66,10 @@ def read_from_file(filename):
 def login_to_robinhood():
     """Logs into Robinhood using credentials and MFA code."""
     try:
-        mfa_code = pyotp.TOTP(robinhood_secrets.MY_2FA_APP_HERE).now()
+        mfa_code = pyotp.TOTP(SECRETS['MY_2FA_APP_HERE']).now()
         login_info = robin_stocks.robinhood.login(
             'rawat.nav@gmail.com',
-            robinhood_secrets.PASSWORD,
+            SECRETS['PASSWORD'],
             mfa_code=mfa_code
         )
         print("Login successful.")
@@ -140,22 +145,22 @@ def read_from_csv(csv_file):
     except Exception as e:
         print(f"Error loading positions from CSV: {e}. Will fetch from API.")
 
-def update_state(current_run_state_to_persist):
-    run_state = load_run_state(PERSISTED_RUN_STATE_FILE)
+def update_state(filepath, current_run_state_to_persist):
+    run_state = load_run_state(filepath)
     current_time = datetime.now(timezone.utc)
     five_minutes_ago = current_time - timedelta(minutes=5)
     # Save the updated run state (new high-water mark date and all ticker premiums)
     if current_run_state_to_persist["order_date"] > run_state["order_date"] or run_state["order_date"] == DEFAULT_PAST_DATE:
         if current_run_state_to_persist["order_date"] != DEFAULT_PAST_DATE:
-            save_run_state(PERSISTED_RUN_STATE_FILE, current_run_state_to_persist)
+            save_run_state(filepath, current_run_state_to_persist)
         else:
             print("No valid new execution date found in current data, run state not saved to prevent overwriting with default date.")
     elif run_state["premiums"] != current_run_state_to_persist["premiums"]:
         print("Ticker premiums have changed, saving updated run state.")
-        save_run_state(PERSISTED_RUN_STATE_FILE, current_run_state_to_persist)
+        save_run_state(filepath, current_run_state_to_persist)
     elif run_state["position_date"] < five_minutes_ago:
         print("Positions have changed, saving updated run state.")
-        save_run_state(PERSISTED_RUN_STATE_FILE, current_run_state_to_persist)
+        save_run_state(filepath, current_run_state_to_persist)
 
 def get_total_equity():
     total_equity = 0

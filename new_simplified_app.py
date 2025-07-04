@@ -11,7 +11,7 @@ st.set_page_config(layout="wide")
 st.title("📊 Interactive Table with Notes")
 
 # Call get_processed_positions to get the latest data (handles caching/refresh logic)
-positions_dict = get_processed_positions()
+positions_dict = get_processed_positions('INDIVIDUAL')
 if not positions_dict:
     st.error("No positions data available.")
     st.stop()

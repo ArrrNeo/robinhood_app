@@ -6,12 +6,8 @@ import robin_stocks
 from datetime import datetime, timezone, timedelta
 
 # --- Constants ---
-MY_STOCKS_FILE = helpers.JSON_DIR + 'my_stocks'
-MY_OPTIONS_FILE = helpers.JSON_DIR + 'my_options'
-FUNDAMENTALS_FILE_PREFIX = helpers.JSON_DIR + 'fundamentals_'
-OPTION_MARKET_DATA_FILE_PREFIX = helpers.JSON_DIR + 'option_market_data_'
-HISTORICAL_OPTION_ORDERS_FILE = helpers.JSON_DIR + 'all_historical_option_orders'
-OUTPUT_CSV_FILE = 'my_positions.csv'
+FUNDAMENTALS_FILE_PREFIX = helpers.CACHE_DIR + '/fundamentals_'
+OPTION_MARKET_DATA_FILE_PREFIX = helpers.CACHE_DIR + '/option_market_data_'
 
 def get_latest_order_update_date(option_orders_list):
     """Iterates through all orders to find the most recent updated_at timestamp."""
@@ -283,15 +279,21 @@ def process_options(my_options_raw):
         processed_options[my_custom_data['id']] = my_custom_data
     return processed_options
 
-def get_processed_positions():
+def get_processed_positions(account='INDIVIDUAL'):
     """Main function to orchestrate the script, process data, and return it."""
     login_info = helpers.login_to_robinhood()
     if not login_info:
         print("Login failed. Exiting.")
         return {} # Return empty dict on failure
 
+    output_csv_file = helpers.CACHE_DIR + '/' + account + '/positions.csv'
+    my_stocks_file = helpers.CACHE_DIR + '/' + account + '/my_stocks'
+    my_options_file = helpers.CACHE_DIR + '/' + account + '/my_options'
+    run_state_file = helpers.CACHE_DIR + '/' + account + '/run_state.json'
+    historical_option_orders_file = helpers.CACHE_DIR + '/' + account + '/all_historical_option_orders'
+
     # Load run state (persisted dates and ticker premiums)
-    run_state = helpers.load_run_state(helpers.PERSISTED_RUN_STATE_FILE)
+    run_state = helpers.load_run_state(run_state_file)
     persisted_last_position_date = run_state["position_date"]
     persisted_last_order_date = run_state["order_date"]
     current_time = datetime.now(timezone.utc)
@@ -305,7 +307,7 @@ def get_processed_positions():
     print ("should_fetch    : ", should_fetch)
 
     if not should_fetch:
-        return helpers.read_from_csv(OUTPUT_CSV_FILE)
+        return helpers.read_from_csv(output_csv_file)
 
     # If we reach here, we need to fetch from API
     print("Fetching positions from Robinhood APIs...")
@@ -320,14 +322,15 @@ def get_processed_positions():
     # after persisted_last_order_date or DEFAULT_PAST_DATE (which ever is later)
     # execution state = filled
     last_order_date_plus_1 = (persisted_last_order_date + timedelta(microseconds=1)).isoformat().replace('+00:00', 'Z')
-    # and append the new orders to HISTORICAL_OPTION_ORDERS_FILE
+    # and append the new orders to historical_option_orders_file
     all_historical_option_orders = helpers.fetch_n_save_data(robin_stocks.robinhood.orders.get_all_option_orders,
-                                                             HISTORICAL_OPTION_ORDERS_FILE,
+                                                             historical_option_orders_file,
+                                                             account_number=helpers.SECRETS['ACCOUNTS'][account],
                                                              start_date=last_order_date_plus_1)
     if all_historical_option_orders is None: all_historical_option_orders = []
 
-    my_stocks_raw = helpers.fetch_n_save_data(robin_stocks.robinhood.account.get_open_stock_positions, MY_STOCKS_FILE)
-    my_options_raw = helpers.fetch_n_save_data(robin_stocks.robinhood.options.get_open_option_positions, MY_OPTIONS_FILE)
+    my_stocks_raw = helpers.fetch_n_save_data(robin_stocks.robinhood.account.get_open_stock_positions, my_stocks_file, account_number=helpers.SECRETS['ACCOUNTS'][account])
+    my_options_raw = helpers.fetch_n_save_data(robin_stocks.robinhood.options.get_open_option_positions, my_options_file, account_number=helpers.SECRETS['ACCOUNTS'][account])
 
     processed_stocks = process_stocks(my_stocks_raw or {}, all_historical_option_orders, persisted_last_order_date, current_run_state_to_persist)
     processed_options = process_options(my_options_raw or [])
@@ -336,8 +339,8 @@ def get_processed_positions():
     rounded_positions = helpers.round_dict(my_total_positions, 2)
 
     # Save to CSV
-    helpers.save_to_csv(rounded_positions, OUTPUT_CSV_FILE)
-    print(f"Saved latest positions to CSV: {OUTPUT_CSV_FILE}")
+    helpers.save_to_csv(rounded_positions, output_csv_file)
+    print(f"Saved latest positions to CSV: {output_csv_file}")
 
     if len(all_historical_option_orders) > 0:
         current_max_order_update_date = get_latest_order_update_date(all_historical_option_orders)
@@ -348,9 +351,9 @@ def get_processed_positions():
     # Update the order date in the state to be persisted with the latest one found in this run's data
     current_run_state_to_persist["order_date"] = current_max_order_update_date
 
-    helpers.update_state(current_run_state_to_persist)
+    helpers.update_state(run_state_file, current_run_state_to_persist)
 
     return rounded_positions
 
 if __name__ == "__main__":
-    get_processed_positions()
+    get_processed_positions('INDIVIDUAL')
