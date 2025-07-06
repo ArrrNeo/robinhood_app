@@ -20,12 +20,12 @@ for account_idx, account in enumerate(accounts):
         st.subheader(f"Positions for {account}")
 
         # Call get_processed_positions to get the latest data
-        positions_dict = get_processed_positions(account)
-        if not positions_dict:
+        positions_list = get_processed_positions(account)
+        if not positions_list:
             st.warning("No positions data available for this account.")
             continue
 
-        df = pd.DataFrame.from_dict(positions_dict, orient='index')
+        df = pd.DataFrame(positions_list)
 
         # Load notes from JSON file or initialize empty dictionary if not exists
         notes_path = f"cache/{account}/notes.json"

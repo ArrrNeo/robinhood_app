@@ -4,6 +4,7 @@ import csv
 import json
 import pyotp
 import robin_stocks
+import pandas as pd
 from datetime import datetime, timezone, timedelta, MINYEAR
 
 os.makedirs("cache/INDIVIDUAL", exist_ok=True)
@@ -39,7 +40,7 @@ def load_run_state(filepath):
 
 def save_run_state(filepath, state_data):
     """Saves the given run state (two dates and ticker premiums) to a JSON file."""
-    os.makedirs(os.path.dirname(filepath), exist_ok=True) 
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
     data_to_save = {
         "last_position_fetch_date": state_data["position_date"].isoformat() if state_data.get("position_date") else None,
         "last_order_processed_date": state_data["order_date"].isoformat() if state_data.get("order_date") else None,
@@ -77,38 +78,44 @@ def login_to_robinhood():
     except Exception as e:
         print(f"Error during login: {e}")
         return None
-    
-def save_to_csv(data_dict, filename):
-    if not data_dict:
-        print("No data to save to CSV.")
+
+def save_to_csv(positions, filename, index=False, encoding="utf-8"):
+    """
+    Converts an array of dictionaries to a CSV file.
+
+    Args:
+        positions (list): A list where each element is a dictionary,
+                           representing a row of data.
+        filename (str): The name of the CSV file to create.
+        index (bool): Whether to write the DataFrame index as the first column.
+                      Defaults to False (recommended for most CSV exports).
+        encoding (str): The encoding to use for the CSV file. Defaults to "utf-8".
+    """
+    if not isinstance(positions, list) or not all(isinstance(d, dict) for d in positions):
+        print("Error: Input must be a list of dictionaries.")
         return
 
-    # Ensure there's at least one item before trying to get keys.
-    if not list(data_dict.values()):
-        print("Data dictionary is empty, cannot determine CSV headers.")
-        return
-    # Define a standard set of headers to ensure consistency,
-    # especially if some items might miss optional keys.
-    # This list should include all possible keys from both stocks and options.
-    # Order them as desired for the CSV output.
-    headers = [
-        'id', 'ticker', 'type', 'side', 'quantity', 'avg_price', 'mark_price',
-        'equity', 'pnl', 'pnl_percent', 'portfolio_percent', 'pe_ratio',
-        'strike', 'option_type', 'expiry', 'premium_earned'
-    ]
+    if not positions:
+        print("Warning: The input array of dictionaries is empty. An empty CSV file will be created.")
+        # Create an empty DataFrame with no columns if the input is empty
+        df = pd.DataFrame()
+    else:
+        # Convert the list of dictionaries to a pandas DataFrame
+        # Pandas automatically infers column names from dictionary keys
+        df = pd.DataFrame(positions)
 
-    # Filter out rows that might be completely empty or don't have an ID.
-    rows_to_write = [row for row in data_dict.values() if row.get('id')]
+    try:
+        # Write the DataFrame to a CSV file
+        # index=False prevents pandas from writing the DataFrame index as a column
+        df.to_csv(filename, index=index, encoding=encoding)
+        print(f"Successfully converted data to '{filename}'")
+        # Optional: Print the first few rows of the DataFrame for verification
+        print("\nFirst 5 rows of the DataFrame (before saving to CSV):")
+        print(df.head())
+        print(f"\nCSV file saved to: {os.path.abspath(filename)}")
 
-    if not rows_to_write:
-        print("No valid data rows to write to CSV.")
-        return
-
-    with open(filename, 'w', newline='') as output_file:
-        dict_writer = csv.DictWriter(output_file, fieldnames=headers, extrasaction='ignore')
-        dict_writer.writeheader()
-        dict_writer.writerows(rows_to_write)
-    print(f"Data saved to {filename}")
+    except Exception as e:
+        print(f"An error occurred while writing the CSV file: {e}")
 
 def round_dict(value, num_decimals=2):
     if isinstance(value, dict):
@@ -119,7 +126,7 @@ def round_dict(value, num_decimals=2):
         return round(value, num_decimals)
     else:
         return value
-    
+
 def fetch_n_save_data(fetch_function, filename_base, *args, **kwargs):
     """Fetches data using the provided function or reads from cache."""
     # Construct the full filename with .json extension for reading/writing
@@ -134,16 +141,17 @@ def read_from_csv(csv_file):
     try:
         with open(csv_file, 'r') as csvfile:
             reader = csv.DictReader(csvfile)
-            positions_dict = {row['id']: {k: (float(v) if v.replace('.', '', 1).isdigit() else v) for k, v in row.items()} for row in reader if row.get('id')}
-        if positions_dict:
+            positions_list = [{k: (float(v) if v.replace('.', '', 1).isdigit() else v) for k, v in row.items()} for row in reader]
+        if positions_list:
             print(f"Loaded positions from CSV ({csv_file}) as last fetch was less than 5 minutes ago.")
-            return positions_dict
+            return positions_list
         else:
             print(f"CSV file {csv_file} is empty, will fetch from API.")
     except FileNotFoundError:
         print(f"CSV file {csv_file} not found, will fetch from API.")
     except Exception as e:
         print(f"Error loading positions from CSV: {e}. Will fetch from API.")
+    return []
 
 def update_state(filepath, current_run_state_to_persist):
     run_state = load_run_state(filepath)

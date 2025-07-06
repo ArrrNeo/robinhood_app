@@ -104,11 +104,11 @@ def calculate_premium_from_new_orders(all_historical_option_orders, ticker, proc
 
 def process_stocks(my_stocks_raw, all_historical_option_orders, process_orders_after_date, current_run_state):
     """Processes raw stock data into a structured format."""
-    processed_stocks = {}
-    
+    processed_stocks = []
+
     total_equity = helpers.get_total_equity()
     cash = helpers.get_cash()
-    
+
     for item in my_stocks_raw:
         # It is possible for positions_data to be [None]
         if not item:
@@ -160,13 +160,13 @@ def process_stocks(my_stocks_raw, all_historical_option_orders, process_orders_a
             total_cumulative_premium = total_cumulative_premium + premium_increment_from_new_trades
             current_run_state["premiums"][symbol] = total_cumulative_premium # Update the state
         my_custom_data['premium_earned'] = total_cumulative_premium
-        processed_stocks[my_custom_data['id']] = my_custom_data
+        processed_stocks.append(my_custom_data)
 
     my_custom_data = {}
     my_custom_data['ticker'] = 'cash'
     my_custom_data['equity'] = cash
     my_custom_data['portfolio_percent'] = cash * 100 / total_equity
-    processed_stocks['cash'] = my_custom_data
+    processed_stocks.append(my_custom_data)
 
     return processed_stocks
 
@@ -204,7 +204,7 @@ def parse_occ_symbol(occ_symbol_full):
 
 def process_options(my_options_raw):
     """Processes raw option data into a structured format."""
-    processed_options = {}
+    processed_options = []
     if not isinstance(my_options_raw, list): # Original code iterates a list
         print("Warning: my_options_raw is not a list. Skipping option processing.")
         return processed_options
@@ -276,7 +276,7 @@ def process_options(my_options_raw):
         my_custom_data['strike'] = strike
 
         my_custom_data['id'] = option_id
-        processed_options[my_custom_data['id']] = my_custom_data
+        processed_options.append(my_custom_data)
     return processed_options
 
 def get_processed_positions(account='INDIVIDUAL'):
@@ -284,7 +284,7 @@ def get_processed_positions(account='INDIVIDUAL'):
     login_info = helpers.login_to_robinhood()
     if not login_info:
         print("Login failed. Exiting.")
-        return {} # Return empty dict on failure
+        return [] # Return empty list on failure
 
     output_csv_file = helpers.CACHE_DIR + '/' + account + '/positions.csv'
     my_stocks_file = helpers.CACHE_DIR + '/' + account + '/my_stocks'
@@ -332,10 +332,10 @@ def get_processed_positions(account='INDIVIDUAL'):
     my_stocks_raw = helpers.fetch_n_save_data(robin_stocks.robinhood.account.get_open_stock_positions, my_stocks_file, account_number=helpers.SECRETS['ACCOUNTS'][account])
     my_options_raw = helpers.fetch_n_save_data(robin_stocks.robinhood.options.get_open_option_positions, my_options_file, account_number=helpers.SECRETS['ACCOUNTS'][account])
 
-    processed_stocks = process_stocks(my_stocks_raw or {}, all_historical_option_orders, persisted_last_order_date, current_run_state_to_persist)
+    processed_stocks = process_stocks(my_stocks_raw or [], all_historical_option_orders, persisted_last_order_date, current_run_state_to_persist)
     processed_options = process_options(my_options_raw or [])
 
-    my_total_positions = {**processed_stocks, **processed_options}
+    my_total_positions = processed_stocks + processed_options
     rounded_positions = helpers.round_dict(my_total_positions, 2)
 
     # Save to CSV
