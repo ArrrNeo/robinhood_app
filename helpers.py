@@ -3,6 +3,7 @@ import os
 import csv
 import json
 import pyotp
+import yfinance
 import robin_stocks
 import pandas as pd
 from datetime import datetime, timezone, timedelta, MINYEAR
@@ -183,3 +184,21 @@ def get_cash():
     accounts_data = robin_stocks.robinhood.account.load_account_profile()
     cash = float(accounts_data['cash']) + float(accounts_data['uncleared_deposits'])
     return cash
+
+def get_price_change_percentage(symbol, period_in_days):
+    # yfinance ticker
+    yf_symbol = symbol.replace('.', '-')
+    ticker = yfinance.Ticker(yf_symbol)
+    """Fetches historical data and calculates the percentage change for a given period."""
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=period_in_days)
+    try:
+        hist = ticker.history(start=start_date, end=end_date)
+        if hist.empty:
+            return 0.0
+        old_price = hist['Close'].iloc[0]
+        new_price = hist['Close'].iloc[-1]
+        return ((new_price - old_price) / old_price) * 100
+    except Exception as e:
+        print(f"Could not fetch history for period {period_in_days} days: {e}")
+        return 0.0
