@@ -125,8 +125,14 @@ def process_stocks(my_stocks_raw, all_historical_option_orders, process_orders_a
         equity_change = (quantity * price) - (quantity * average_buy_price)
         percentage = quantity * price * 100 / total_equity
         intraday_average_buy_price = float(item['intraday_average_buy_price'])
-        high_52_weeks = float(fundamental_data['high_52_weeks'])
-        low_52_weeks = float(fundamental_data['low_52_weeks'])
+        if fundamental_data['high_52_weeks'] is not None:
+            high_52_weeks = float(fundamental_data['high_52_weeks'])
+        else:
+            high_52_weeks = 0.0
+        if fundamental_data['low_52_weeks'] is not None:
+            low_52_weeks = float(fundamental_data['low_52_weeks'])
+        else:
+            low_52_weeks = 0.0
         if (average_buy_price == 0.0):
             percent_change = 0.0
         else:
@@ -150,8 +156,10 @@ def process_stocks(my_stocks_raw, all_historical_option_orders, process_orders_a
         my_custom_data['portfolio_percent'] = percentage
         my_custom_data['high_52_weeks'] = high_52_weeks
         my_custom_data['low_52_weeks'] = low_52_weeks
-        my_custom_data['position_52_week'] = (price - low_52_weeks) * 100.0 / (high_52_weeks - low_52_weeks)
-
+        if high_52_weeks and low_52_weeks:
+            my_custom_data['position_52_week'] = (price - low_52_weeks) * 100.0 / (high_52_weeks - low_52_weeks)
+        else:
+            my_custom_data['position_52_week'] = 0.0
         # Add yfinance data
         my_custom_data['1w_change'] = helpers.get_price_change_percentage(symbol, 7)
         my_custom_data['1mo_change'] = helpers.get_price_change_percentage(symbol, 30)
