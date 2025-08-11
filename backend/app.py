@@ -23,7 +23,7 @@ try:
         secrets = json.load(f)
 
     r.login(
-        username=None,
+        username=secrets["USER"],
         password=secrets["PASSWORD"],
         store_session=True,
         mfa_code=secrets["MY_2FA_APP_HERE"]
@@ -32,6 +32,21 @@ try:
 except Exception as e:
     print(f"CRITICAL: Robinhood login failed on startup. {e}")
     # The app will still run, but API calls will fail.
+
+def parse_occ_symbol(occ_symbol_full):
+    """Parses the OCC option symbol to extract expiry, type, and strike."""
+    if not occ_symbol_full or not isinstance(occ_symbol_full, str) or len(occ_symbol_full.split()) <= 1:
+        return 'N/A', 'N/A', 0
+    try:
+        occ_symbol_core = occ_symbol_full.split()[1]
+        expiry_str = occ_symbol_core[:6]
+        expiry = datetime.strptime(expiry_str, "%y%m%d").strftime("%m/%d/%Y")
+        option_type = 'call' if occ_symbol_core[6] == 'C' else 'put'
+        strike = float(occ_symbol_core[7:]) / 1000
+        return expiry, option_type, strike
+    except (ValueError, IndexError) as e:
+        print(f"Error parsing OCC symbol '{occ_symbol_full}': {e}")
+        return 'N/A', 'N/A', 0
 
 def get_data_for_account(account_name):
     """
@@ -46,66 +61,106 @@ def get_data_for_account(account_name):
         if not account_number:
             return {"error": "Account not found"}, 404
 
-        # 1. Fetch positions
-        positions = r.account.get_open_stock_positions(account_number=account_number)
+        total_pnl = 0
+        # 1. Fetch and process stocks first
+        stock_positions = r.account.get_open_stock_positions(account_number=account_number)
         all_positions_data = []
 
-        if positions:
-            for pos in positions:
-                if not pos or float(pos['quantity']) == 0:
-                    continue
-
+        if stock_positions:
+            for pos in stock_positions:
+                if not pos or float(pos['quantity']) == 0: continue
                 instrument_data = r.get_instrument_by_url(pos['instrument'])
                 ticker = instrument_data['symbol']
-
-                # For speed in the API, we'll skip the ATH calculation for now.
-                # This is a heavy operation and better handled differently in a real app.
+                latest_price_str = r.get_latest_price(ticker)[0]
+                if not latest_price_str: continue
 
                 quantity = float(pos['quantity'])
                 avg_cost = float(pos['average_buy_price'])
-                latest_price_str = r.get_latest_price(ticker)[0]
-                if latest_price_str is None: continue # Skip if price is not available
-
                 latest_price = float(latest_price_str)
                 market_value = quantity * latest_price
-                total_cost = quantity * avg_cost
-                unrealized_pnl = market_value - total_cost
-                unrealized_return_pct = (unrealized_pnl / total_cost) * 100 if total_cost > 0 else 0
-
-                created_at = datetime.strptime(pos['created_at'], "%Y-%m-%dT%H:%M:%S.%fZ")
-                days_held = (datetime.now() - created_at).days
-                annualized_return = ((1 + (unrealized_return_pct / 100)) ** (365.0 / days_held) - 1) * 100 if days_held > 0 else 0
+                unrealized_pnl = market_value - (quantity * avg_cost)
+                total_pnl += unrealized_pnl
 
                 all_positions_data.append({
+                    "type": "stock",
                     "ticker": ticker,
                     "quantity": quantity,
                     "marketValue": market_value,
                     "avgCost": avg_cost,
-                    "totalCost": total_cost,
                     "unrealizedPnl": unrealized_pnl,
-                    "returnPct": unrealized_return_pct,
-                    "annualizedPct": annualized_return,
+                    "returnPct": (unrealized_pnl / (quantity * avg_cost)) * 100 if avg_cost > 0 else 0,
+                    "strike": None, "expiry": None, "option_type": None
                 })
 
-        # 2. Fetch portfolio summary
+        # 2. then, Fetch and process options
+        option_positions = r.options.get_open_option_positions(account_number=account_number)
+        if option_positions:
+            for pos in option_positions:
+                if not pos or float(pos['quantity']) == 0: continue
+                option_id = pos.get('option_id')
+                market_data_list = r.options.get_option_market_data_by_id(option_id)
+                if not market_data_list or not market_data_list[0]: continue
+                market_data = market_data_list[0]
+
+                quantity = float(pos['quantity'])
+                avg_price = float(pos['average_price']) / 100
+                mark_price = float(market_data.get('mark_price', 0))
+                market_value = quantity * mark_price * 100
+
+                pnl_per_share = mark_price - avg_price
+                if pos.get('type') == 'short':
+                    pnl_per_share *= -1
+
+                unrealized_pnl = pnl_per_share * quantity * 100
+                total_pnl += unrealized_pnl
+
+                expiry, option_type, strike = parse_occ_symbol(market_data.get('occ_symbol'))
+
+                all_positions_data.append({
+                    "type": "option",
+                    "ticker": pos.get('chain_symbol'),
+                    "quantity": quantity,
+                    "marketValue": market_value,
+                    "avgCost": avg_price,
+                    "unrealizedPnl": unrealized_pnl,
+                    "returnPct": (pnl_per_share / avg_price) * 100 if avg_price > 0 else 0,
+                    "strike": strike, "expiry": expiry, "option_type": option_type
+                })
+
+        # 3. lastly, Fetch portfolio summary and cash
+        # for total equity
         portfolio = r.account.load_portfolio_profile(account_number=account_number + '/')
-        # naveen
-        print("account_name: ", account_name)
-        print("account_number: ", account_number)
-        print("portfolio")
-        pp.pprint(portfolio)
+        # for cash and uncleared deposits
+        account_details = r.account.load_account_profile(account_number=account_number + '/')
+
         equity = float(portfolio.get('extended_hours_equity') or portfolio['equity'])
-        change_today_abs = equity - float(portfolio['equity_previous_close'])
+        cash = float(account_details.get('cash')) + float(account_details.get('uncleared_deposits'))
+
+        # Add cash as a position
+        all_positions_data.append({
+            "type": "cash", "ticker": "USD Cash", "quantity": 1,
+            "marketValue": cash, "avgCost": cash, "unrealizedPnl": 0, "returnPct": 0,
+            "strike": None, "expiry": None, "option_type": None
+        })
+
         if float(portfolio['equity_previous_close']) == 0:
+            change_today_abs = 0.0
             change_today_pct = 0.0
         else:
+            change_today_abs = equity - float(portfolio['equity_previous_close'])
             change_today_pct = (change_today_abs / float(portfolio['equity_previous_close'])) * 100
+
+        # 4. Calculate unique tickers
+        # Exclude 'USD Cash' from the count
+        unique_tickers = set(pos['ticker'] for pos in all_positions_data if pos['ticker'] != 'USD Cash')
+        total_tickers = len(unique_tickers)
 
         summary = {
             "totalEquity": equity,
             "changeTodayAbs": change_today_abs,
             "changeTodayPct": change_today_pct,
-            "totalPnl": sum(p['unrealizedPnl'] for p in all_positions_data)
+            "totalPnl": total_pnl,
+            "totalTickers": total_tickers
         }
 
         return {

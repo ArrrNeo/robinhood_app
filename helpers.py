@@ -70,7 +70,7 @@ def login_to_robinhood():
     try:
         mfa_code = pyotp.TOTP(SECRETS['MY_2FA_APP_HERE']).now()
         login_info = robin_stocks.robinhood.login(
-            'rawat.nav@gmail.com',
+            SECRETS['USER'],
             SECRETS['PASSWORD'],
             mfa_code=mfa_code
         )
