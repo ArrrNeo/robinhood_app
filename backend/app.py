@@ -1,3 +1,4 @@
+from collections import defaultdict
 import os
 import json
 import pprint
@@ -34,6 +35,63 @@ except Exception as e:
     print(f"CRITICAL: Robinhood login failed on startup. {e}")
     # The app will still run, but API calls will fail.
 
+def is_order_eligible_for_premium(order):
+    """
+    Identifies if an option order is eligible for earned premium calculation.
+    Only 'sell to open' and 'buy to close' orders are eligible.
+    """
+    if order.get("state") != "filled" or not order.get("legs"):
+        return False
+
+    sell_to_open = any(leg["side"] == "sell" and leg["position_effect"] == "open" for leg in order["legs"])
+    buy_to_close = any(leg["side"] == "buy" and leg["position_effect"] == "close" for leg in order["legs"])
+
+    return sell_to_open or buy_to_close
+
+def calculate_premium_per_ticker(account_number):
+    """
+    Calculates the net premium from all historical filled option orders
+    and groups it by ticker.
+    """
+    premiums = defaultdict(float)
+    try:
+        all_orders = r.orders.get_all_option_orders(account_number=account_number)
+        if not all_orders:
+            return premiums
+
+        for order in all_orders:
+            if not is_order_eligible_for_premium(order):
+                continue
+
+            ticker = order.get("chain_symbol")
+            direction = order.get("direction") # Use 'direction' for overall order credit/debit
+            amount_str = order.get("price") # Use 'price' which is the net amount for the order
+            quantity_str = order.get("quantity")
+
+            if not all([ticker, direction, amount_str, quantity_str]):
+                continue
+
+            try:
+                amount = float(amount_str)
+                quantity = float(quantity_str)
+                net_amount = amount * quantity
+
+                # For multi-leg orders, the premium is the net result.
+                # 'direction' tells us if it was a net credit or debit.
+                if direction == "credit":
+                    premiums[ticker] += net_amount
+                elif direction == "debit":
+                    premiums[ticker] -= net_amount
+            except (ValueError, TypeError) as e:
+                print(f"Warning: Could not parse amount/quantity for order {order.get('id')}. Error: {e}")
+                continue
+        return premiums
+    except Exception as e:
+        print(f"ERROR in calculate_premium_per_ticker: {e}")
+        traceback.print_exc()
+        return premiums
+
+
 def parse_occ_symbol(occ_symbol_full):
     """Parses the OCC option symbol to extract expiry, type, and strike."""
     if not occ_symbol_full or not isinstance(occ_symbol_full, str) or len(occ_symbol_full.split()) <= 1:
@@ -61,6 +119,10 @@ def get_data_for_account(account_name):
         account_number = accounts_map.get(account_name)
         if not account_number:
             return {"error": "Account not found"}, 404
+
+        # --- Calculate Earned Premium ---
+        premiums_by_ticker = calculate_premium_per_ticker(account_number)
+        total_earned_premium = sum(premiums_by_ticker.values())
 
         total_pnl = 0
         # 1. Fetch and process stocks first
@@ -90,7 +152,8 @@ def get_data_for_account(account_name):
                     "avgCost": avg_cost,
                     "unrealizedPnl": unrealized_pnl,
                     "returnPct": (unrealized_pnl / (quantity * avg_cost)) * 100 if avg_cost > 0 else 0,
-                    "strike": None, "expiry": None, "option_type": None
+                    "strike": None, "expiry": None, "option_type": None,
+                    "earnedPremium": premiums_by_ticker.get(ticker, 0.0)
                 })
 
         # 2. then, Fetch and process options
@@ -103,6 +166,7 @@ def get_data_for_account(account_name):
                 if not market_data_list or not market_data_list[0]: continue
                 market_data = market_data_list[0]
 
+                ticker = pos.get('chain_symbol')
                 quantity = float(pos['quantity'])
                 avg_price = float(pos['average_price']) / 100
                 mark_price = float(market_data.get('mark_price', 0))
@@ -119,13 +183,14 @@ def get_data_for_account(account_name):
 
                 all_positions_data.append({
                     "type": "option",
-                    "ticker": pos.get('chain_symbol'),
+                    "ticker": ticker,
                     "quantity": quantity,
                     "marketValue": market_value,
                     "avgCost": avg_price,
                     "unrealizedPnl": unrealized_pnl,
                     "returnPct": (pnl_per_share / avg_price) * 100 if avg_price > 0 else 0,
-                    "strike": strike, "expiry": expiry, "option_type": option_type
+                    "strike": strike, "expiry": expiry, "option_type": option_type,
+                    "earnedPremium": premiums_by_ticker.get(ticker, 0.0)
                 })
 
         # 3. lastly, Fetch portfolio summary and cash
@@ -141,7 +206,8 @@ def get_data_for_account(account_name):
         all_positions_data.append({
             "type": "cash", "ticker": "USD Cash", "quantity": 1,
             "marketValue": cash, "avgCost": cash, "unrealizedPnl": 0, "returnPct": 0,
-            "strike": None, "expiry": None, "option_type": None
+            "strike": None, "expiry": None, "option_type": None,
+            "earnedPremium": 0.0
         })
 
         if float(portfolio['equity_previous_close']) == 0:
@@ -161,7 +227,8 @@ def get_data_for_account(account_name):
             "changeTodayAbs": change_today_abs,
             "changeTodayPct": change_today_pct,
             "totalPnl": total_pnl,
-            "totalTickers": total_tickers
+            "totalTickers": total_tickers,
+            "earnedPremium": total_earned_premium
         }
 
         return {

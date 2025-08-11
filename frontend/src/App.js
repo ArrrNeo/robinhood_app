@@ -102,6 +102,7 @@ function App() {
         avgCost: { label: 'Avg Cost', visible: true },
         unrealizedPnl: { label: 'P/L', visible: true },
         returnPct: { label: '% Return', visible: true },
+        earnedPremium: { label: 'Earned Premium', visible: true },
         type: { label: 'Type', visible: true },
         strike: { label: 'Strike', visible: true },
         expiry: { label: 'Expiry', visible: true },
@@ -236,18 +237,25 @@ function App() {
         const isOption = pos.type === 'option';
         const isCash = pos.type === 'cash';
 
+        const cells = {
+            ticker: <td className="p-4 font-bold text-white">{pos.ticker}</td>,
+            marketValue: <td className="p-4 font-mono">{formatCurrency(pos.marketValue)}</td>,
+            quantity: <td className="p-4 font-mono">{isCash ? '-' : pos.quantity.toFixed(2)}</td>,
+            avgCost: <td className="p-4 font-mono">{isCash ? '-' : formatCurrency(pos.avgCost)}</td>,
+            unrealizedPnl: <td className="p-4 font-mono"><PnlIndicator value={pos.unrealizedPnl} /></td>,
+            returnPct: <td className="p-4 font-mono"><PctIndicator value={pos.returnPct} /></td>,
+            earnedPremium: <td className="p-4 font-mono">{isCash ? '-' : formatCurrency(pos.earnedPremium)}</td>,
+            type: <td className="p-4 font-mono capitalize">{isOption ? pos.option_type : (isCash ? '-' : 'Stock')}</td>,
+            strike: <td className="p-4 font-mono">{isOption ? formatCurrency(pos.strike) : '-'}</td>,
+            expiry: <td className="p-4 font-mono">{isOption ? pos.expiry : '-'}</td>,
+            notes: <td className="p-4 font-mono"><EditableNoteCell ticker={pos.ticker} initialNote={pos.note} onSave={handleSaveNote} /></td>
+        };
+
         return (
             <tr key={isOption ? `${pos.ticker}-${pos.expiry}-${pos.strike}-${pos.option_type}` : pos.ticker} className="border-b border-gray-700 last:border-b-0 hover:bg-gray-700/50 transition-colors">
-                {columns.ticker.visible && <td className="p-4 font-bold text-white">{pos.ticker}</td>}
-                {columns.marketValue.visible && <td className="p-4 font-mono">{formatCurrency(pos.marketValue)}</td>}
-                {columns.quantity.visible && <td className="p-4 font-mono">{isCash ? '-' : pos.quantity.toFixed(2)}</td>}
-                {columns.avgCost.visible && <td className="p-4 font-mono">{isCash ? '-' : formatCurrency(pos.avgCost)}</td>}
-                {columns.unrealizedPnl.visible && <td className="p-4 font-mono"><PnlIndicator value={pos.unrealizedPnl} /></td>}
-                {columns.returnPct.visible && <td className="p-4 font-mono"><PctIndicator value={pos.returnPct} /></td>}
-                {columns.type.visible && <td className="p-4 font-mono capitalize">{isOption ? pos.option_type : (isCash ? '-' : 'Stock')}</td>}
-                {columns.strike.visible && <td className="p-4 font-mono">{isOption ? formatCurrency(pos.strike) : '-'}</td>}
-                {columns.expiry.visible && <td className="p-4 font-mono">{isOption ? pos.expiry : '-'}</td>}
-                {columns.notes.visible && <td className="p-4 font-mono"><EditableNoteCell ticker={pos.ticker} initialNote={pos.note} onSave={handleSaveNote} /></td>}
+                {Object.entries(columns).map(([key, { visible }]) =>
+                    visible ? React.cloneElement(cells[key], { key }) : null
+                )}
             </tr>
         );
     };
@@ -277,9 +285,9 @@ function App() {
                     <p className="text-gray-400">Last updated: {new Date().toLocaleString()}</p>
                 </header>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6 mb-8">
                     {loading || !portfolioData ? (
-                        [...Array(5)].map((_, i) => <MetricCardSkeleton key={i} />)
+                        [...Array(6)].map((_, i) => <MetricCardSkeleton key={i} />)
                     ) : (
                         <>
                             <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
@@ -302,6 +310,12 @@ function App() {
                                 <h3 className="text-gray-400 text-sm mb-2">Day's P/L %</h3>
                                 <p className={`text-3xl font-semibold ${portfolioData.summary.changeTodayPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                     {formatPercent(portfolioData.summary.changeTodayPct)}
+                                </p>
+                            </div>
+                            <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                <h3 className="text-gray-400 text-sm mb-2">Earned Premium</h3>
+                                <p className="text-3xl font-semibold text-green-400">
+                                    {formatCurrency(portfolioData.summary.earnedPremium)}
                                 </p>
                             </div>
                             <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
