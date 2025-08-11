@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './index.css';
 
 // --- Helper Components ---
@@ -10,7 +10,6 @@ const GearIcon = () => (
     </svg>
 );
 
-// Loading Skeleton for a more professional loading state
 const MetricCardSkeleton = () => (
     <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 animate-pulse">
         <div className="h-4 bg-gray-600 rounded w-3/4 mb-3"></div>
@@ -26,7 +25,6 @@ const TableRowSkeleton = ({ columns }) => (
     </tr>
 );
 
-// Formatter for numbers to add commas and signs
 const formatCurrency = (value, sign = false) => {
     if (typeof value !== 'number') return '$0.00';
     const options = { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 };
@@ -51,6 +49,41 @@ const PctIndicator = ({ value }) => (
     </span>
 );
 
+const EditableNoteCell = ({ ticker, initialNote, onSave }) => {
+    const [note, setNote] = useState(initialNote);
+    const textareaRef = useRef(null);
+
+    useEffect(() => {
+        setNote(initialNote);
+    }, [initialNote]);
+
+    useEffect(() => {
+        if (textareaRef.current) {
+            textareaRef.current.style.height = 'auto';
+            textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+        }
+    }, [note]);
+
+    const handleBlur = () => {
+        if (note !== initialNote) {
+            onSave(ticker, note);
+        }
+    };
+
+    return (
+        <textarea
+            ref={textareaRef}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            onBlur={handleBlur}
+            className="w-full bg-transparent resize-none border-none focus:ring-0 focus:outline-none p-0 m-0"
+            placeholder="Add a note..."
+            rows="1"
+        />
+    );
+};
+
+
 // --- Main App Component ---
 
 function App() {
@@ -72,13 +105,13 @@ function App() {
         type: { label: 'Type', visible: true },
         strike: { label: 'Strike', visible: true },
         expiry: { label: 'Expiry', visible: true },
+        notes: { label: 'Notes', visible: true },
     };
 
     const [columns, setColumns] = useState(() => {
         try {
             const saved = localStorage.getItem('portfolio-columns');
             const parsed = saved ? JSON.parse(saved) : initialColumns;
-            // Ensure all columns from initialColumns are present
             for (const key in initialColumns) {
                 if (!parsed.hasOwnProperty(key)) {
                     parsed[key] = initialColumns[key];
@@ -101,7 +134,6 @@ function App() {
         }));
     };
 
-    // Close settings dropdown when clicking outside
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (settingsRef.current && !settingsRef.current.contains(event.target)) {
@@ -112,8 +144,6 @@ function App() {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-
-    // Fetch the list of available accounts on component mount
     useEffect(() => {
         const fetchAccounts = async () => {
             try {
@@ -132,7 +162,31 @@ function App() {
         fetchAccounts();
     }, []);
 
-    // Fetch portfolio data whenever the selected account changes
+    const handleSaveNote = useCallback(async (ticker, note) => {
+        if (!selectedAccount) return;
+        try {
+            const response = await fetch(`http://192.168.4.42:5001/api/notes/${selectedAccount}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ticker, note }),
+            });
+            if (!response.ok) throw new Error('Failed to save note.');
+
+            // Optimistically update local state
+            setPortfolioData(prevData => {
+                if (!prevData) return null;
+                const updatedPositions = prevData.positions.map(p =>
+                    p.ticker === ticker ? { ...p, note } : p
+                );
+                return { ...prevData, positions: updatedPositions };
+            });
+
+        } catch (e) {
+            console.error("Failed to save note:", e);
+            // Optionally show an error to the user
+        }
+    }, [selectedAccount]);
+
     useEffect(() => {
         if (!selectedAccount) return;
 
@@ -141,14 +195,32 @@ function App() {
             setError(null);
             setPortfolioData(null);
             try {
-                const response = await fetch(`http://192.168.4.42:5001/api/portfolio/${selectedAccount}`);
-                if (!response.ok) {
-                    const errData = await response.json();
-                    throw new Error(errData.error || `HTTP error! status: ${response.status}`);
+                const [portfolioRes, notesRes] = await Promise.all([
+                    fetch(`http://192.168.4.42:5001/api/portfolio/${selectedAccount}`),
+                    fetch(`http://192.168.4.42:5001/api/notes/${selectedAccount}`)
+                ]);
+
+                if (!portfolioRes.ok) {
+                    const errData = await portfolioRes.json();
+                    throw new Error(errData.error || `HTTP error! status: ${portfolioRes.status}`);
                 }
-                const data = await response.json();
-                if (data.error) throw new Error(data.error);
-                setPortfolioData(data);
+                if (!notesRes.ok) {
+                    // Don't throw, notes might not exist, which is fine
+                    console.warn(`Could not fetch notes for ${selectedAccount}. Status: ${notesRes.status}`);
+                }
+
+                const portfolioResult = await portfolioRes.json();
+                const notesResult = notesRes.ok ? await notesRes.json() : {};
+
+                if (portfolioResult.error) throw new Error(portfolioResult.error);
+
+                const positionsWithNotes = portfolioResult.positions.map(pos => ({
+                    ...pos,
+                    note: notesResult[pos.ticker] || ''
+                }));
+
+                setPortfolioData({ ...portfolioResult, positions: positionsWithNotes });
+
             } catch (e) {
                 setError(`Failed to fetch portfolio data for ${selectedAccount}. Error: ${e.message}`);
                 console.error(e);
@@ -175,6 +247,7 @@ function App() {
                 {columns.type.visible && <td className="p-4 font-mono capitalize">{isOption ? pos.option_type : (isCash ? '-' : 'Stock')}</td>}
                 {columns.strike.visible && <td className="p-4 font-mono">{isOption ? formatCurrency(pos.strike) : '-'}</td>}
                 {columns.expiry.visible && <td className="p-4 font-mono">{isOption ? pos.expiry : '-'}</td>}
+                {columns.notes.visible && <td className="p-4 font-mono"><EditableNoteCell ticker={pos.ticker} initialNote={pos.note} onSave={handleSaveNote} /></td>}
             </tr>
         );
     };
@@ -268,32 +341,28 @@ function App() {
                             )}
                         </div>
                     </div>
-                    <table className="w-full text-left min-w-[1000px]">
-                        <thead className="bg-gray-800 border-b border-gray-700">
-                            <tr>
-                                {columns.ticker.visible && <th className="p-4 text-sm font-semibold text-gray-400 tracking-wider">Ticker</th>}
-                                {columns.marketValue.visible && <th className="p-4 text-sm font-semibold text-gray-400 tracking-wider">Market Value</th>}
-                                {columns.quantity.visible && <th className="p-4 text-sm font-semibold text-gray-400 tracking-wider">Quantity</th>}
-                                {columns.avgCost.visible && <th className="p-4 text-sm font-semibold text-gray-400 tracking-wider">Avg Cost</th>}
-                                {columns.unrealizedPnl.visible && <th className="p-4 text-sm font-semibold text-gray-400 tracking-wider">P/L</th>}
-                                {columns.returnPct.visible && <th className="p-4 text-sm font-semibold text-gray-400 tracking-wider">% Return</th>}
-                                {columns.type.visible && <th className="p-4 text-sm font-semibold text-gray-400 tracking-wider">Type</th>}
-                                {columns.strike.visible && <th className="p-4 text-sm font-semibold text-gray-400 tracking-wider">Strike</th>}
-                                {columns.expiry.visible && <th className="p-4 text-sm font-semibold text-gray-400 tracking-wider">Expiry</th>}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {loading || !portfolioData ? (
-                                Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} columns={columns} />)
-                            ) : (
-                                portfolioData.positions.length > 0 ? portfolioData.positions.map(renderPositionRow) : (
-                                    <tr>
-                                        <td colSpan={Object.values(columns).filter(c => c.visible).length} className="text-center p-8 text-gray-400">No open positions found in this account.</td>
-                                    </tr>
-                                )
-                            )}
-                        </tbody>
-                    </table>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left min-w-[1200px]">
+                            <thead className="bg-gray-800 border-b border-gray-700">
+                                <tr>
+                                    {Object.entries(columns).map(([key, { label, visible }]) =>
+                                        visible ? <th key={key} className="p-4 text-sm font-semibold text-gray-400 tracking-wider">{label}</th> : null
+                                    )}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {loading || !portfolioData ? (
+                                    Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} columns={columns} />)
+                                ) : (
+                                    portfolioData.positions.length > 0 ? portfolioData.positions.map(renderPositionRow) : (
+                                        <tr>
+                                            <td colSpan={Object.values(columns).filter(c => c.visible).length} className="text-center p-8 text-gray-400">No open positions found in this account.</td>
+                                        </tr>
+                                    )
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </main>
         </div>

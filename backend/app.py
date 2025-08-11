@@ -1,10 +1,11 @@
+import os
 import json
 import pprint
 import traceback
 import pandas as pd
 from flask_cors import CORS
 from datetime import datetime
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 import robin_stocks.robinhood as r
 
 # --- Flask App Initialization ---
@@ -174,7 +175,8 @@ def get_data_for_account(account_name):
         traceback.print_exc()
         return {"error": f"An internal error occurred. Check the backend console for details. Error: {e}"}, 500
 
-# --- API Endpoint ---
+# --- API Endpoints ---
+
 @app.route('/api/portfolio/<string:account_name>', methods=['GET'])
 def get_portfolio(account_name):
     """API endpoint to get portfolio data."""
@@ -190,6 +192,43 @@ def get_accounts():
         return jsonify(list(accounts.keys()))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/notes/<string:account_name>', methods=['GET'])
+def get_notes(account_name):
+    """API endpoint to get notes for a specific account."""
+    notes_path = os.path.join('..', 'cache', account_name, 'notes.json')
+    if os.path.exists(notes_path):
+        with open(notes_path, 'r') as f:
+            notes = json.load(f)
+        return jsonify(notes)
+    return jsonify({})
+
+@app.route('/api/notes/<string:account_name>', methods=['POST'])
+def update_note(account_name):
+    """API endpoint to update a note for a specific ticker in an account."""
+    data = request.get_json()
+    if not data or 'ticker' not in data or 'note' not in data:
+        return jsonify({"error": "Invalid payload. 'ticker' and 'note' are required."}), 400
+
+    ticker = data['ticker']
+    note_content = data['note']
+    notes_dir = os.path.join('..', 'cache', account_name)
+    notes_path = os.path.join(notes_dir, 'notes.json')
+
+    os.makedirs(notes_dir, exist_ok=True)
+
+    notes = {}
+    if os.path.exists(notes_path):
+        with open(notes_path, 'r') as f:
+            notes = json.load(f)
+
+    notes[ticker] = note_content
+
+    with open(notes_path, 'w') as f:
+        json.dump(notes, f, indent=2)
+
+    return jsonify({"success": True, "ticker": ticker, "note": note_content})
+
 
 # --- Run the App ---
 if __name__ == '__main__':
