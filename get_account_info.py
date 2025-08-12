@@ -1,9 +1,12 @@
 import os
 import csv
+import json
 import pprint
 import helpers
 import robin_stocks
 from datetime import datetime, timezone, timedelta
+
+# order_considered_for_earned_premium = []
 
 # --- Constants ---
 FUNDAMENTALS_FILE_PREFIX = helpers.CACHE_DIR + '/fundamentals_'
@@ -90,6 +93,7 @@ def calculate_premium_from_new_orders(all_historical_option_orders, ticker, proc
     for order in new_orders_for_ticker:
         if not is_order_eligible_for_premium(order):
             continue
+        # order_considered_for_earned_premium.append(order)
         direction = order.get("net_amount_direction")
         amount_str = order.get("net_amount")
         if amount_str is None: continue
@@ -99,7 +103,11 @@ def calculate_premium_from_new_orders(all_historical_option_orders, ticker, proc
                 premium_increment += amount
             elif direction == "debit":
                 premium_increment -= amount
-        except ValueError: continue
+        except ValueError:
+            continue
+    # with open('order_considered_for_earned_premium.json', 'w') as f:
+    #     json.dump(order_considered_for_earned_premium, f, indent=4)
+
     return premium_increment
 
 def process_stocks(my_stocks_raw, all_historical_option_orders, process_orders_after_date, current_run_state):

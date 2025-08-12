@@ -97,15 +97,27 @@ function App() {
 
     const initialColumns = {
         ticker: { label: 'Ticker', visible: true },
+        name: { label: 'Name', visible: false },
         marketValue: { label: 'Market Value', visible: true },
         quantity: { label: 'Quantity', visible: true },
         avgCost: { label: 'Avg Cost', visible: true },
         unrealizedPnl: { label: 'P/L', visible: true },
         returnPct: { label: '% Return', visible: true },
+        intraday_percent_change: { label: 'Day %', visible: false },
         earnedPremium: { label: 'Earned Premium', visible: true },
+        portfolio_percent: { label: 'Portfolio %', visible: false },
+        side: { label: 'Side', visible: false },
         type: { label: 'Type', visible: true },
         strike: { label: 'Strike', visible: true },
         expiry: { label: 'Expiry', visible: true },
+        pe_ratio: { label: 'P/E Ratio', visible: false },
+        high_52_weeks: { label: '52wk High', visible: false },
+        low_52_weeks: { label: '52wk Low', visible: false },
+        position_52_week: { label: '52wk Pos %', visible: false },
+        one_week_change: { label: '1W %', visible: false },
+        one_month_change: { label: '1M %', visible: false },
+        three_month_change: { label: '3M %', visible: false },
+        one_year_change: { label: '1Y %', visible: false },
         notes: { label: 'Notes', visible: true },
     };
 
@@ -206,7 +218,6 @@ function App() {
                     throw new Error(errData.error || `HTTP error! status: ${portfolioRes.status}`);
                 }
                 if (!notesRes.ok) {
-                    // Don't throw, notes might not exist, which is fine
                     console.warn(`Could not fetch notes for ${selectedAccount}. Status: ${notesRes.status}`);
                 }
 
@@ -239,15 +250,27 @@ function App() {
 
         const cells = {
             ticker: <td className="p-4 font-bold text-white">{pos.ticker}</td>,
+            name: <td className="p-4 text-gray-300">{pos.name}</td>,
             marketValue: <td className="p-4 font-mono">{formatCurrency(pos.marketValue)}</td>,
             quantity: <td className="p-4 font-mono">{isCash ? '-' : pos.quantity.toFixed(2)}</td>,
             avgCost: <td className="p-4 font-mono">{isCash ? '-' : formatCurrency(pos.avgCost)}</td>,
             unrealizedPnl: <td className="p-4 font-mono"><PnlIndicator value={pos.unrealizedPnl} /></td>,
             returnPct: <td className="p-4 font-mono"><PctIndicator value={pos.returnPct} /></td>,
+            intraday_percent_change: <td className="p-4 font-mono"><PctIndicator value={pos.intraday_percent_change} /></td>,
             earnedPremium: <td className="p-4 font-mono">{isCash ? '-' : formatCurrency(pos.earnedPremium)}</td>,
+            portfolio_percent: <td className="p-4 font-mono">{formatPercent(pos.portfolio_percent)}</td>,
+            side: <td className="p-4 font-mono capitalize">{pos.side}</td>,
             type: <td className="p-4 font-mono capitalize">{isOption ? pos.option_type : (isCash ? '-' : 'Stock')}</td>,
             strike: <td className="p-4 font-mono">{isOption ? formatCurrency(pos.strike) : '-'}</td>,
             expiry: <td className="p-4 font-mono">{isOption ? pos.expiry : '-'}</td>,
+            pe_ratio: <td className="p-4 font-mono">{pos.pe_ratio ? pos.pe_ratio.toFixed(2) : '-'}</td>,
+            high_52_weeks: <td className="p-4 font-mono">{formatCurrency(pos.high_52_weeks)}</td>,
+            low_52_weeks: <td className="p-4 font-mono">{formatCurrency(pos.low_52_weeks)}</td>,
+            position_52_week: <td className="p-4 font-mono">{formatPercent(pos.position_52_week)}</td>,
+            one_week_change: <td className="p-4 font-mono"><PctIndicator value={pos.one_week_change} /></td>,
+            one_month_change: <td className="p-4 font-mono"><PctIndicator value={pos.one_month_change} /></td>,
+            three_month_change: <td className="p-4 font-mono"><PctIndicator value={pos.three_month_change} /></td>,
+            one_year_change: <td className="p-4 font-mono"><PctIndicator value={pos.one_year_change} /></td>,
             notes: <td className="p-4 font-mono"><EditableNoteCell ticker={pos.ticker} initialNote={pos.note} onSave={handleSaveNote} /></td>
         };
 
@@ -338,7 +361,7 @@ function App() {
                                     <div className="p-3 border-b border-gray-600">
                                         <h4 className="font-semibold text-white">Display Columns</h4>
                                     </div>
-                                    <div className="p-2">
+                                    <div className="p-2 max-h-96 overflow-y-auto">
                                         {Object.entries(columns).map(([key, { label, visible }]) => (
                                             <label key={key} className="flex items-center space-x-3 px-3 py-2 cursor-pointer hover:bg-gray-700 rounded-md">
                                                 <input
