@@ -241,11 +241,59 @@ def parse_occ_symbol(occ_symbol_full):
         print(f"Error parsing OCC symbol '{occ_symbol_full}': {e}")
         return 'N/A', 'N/A', 0
 
-def get_data_for_account(account_name):
+import pytz
+from datetime import datetime, timedelta, time
+
+def is_market_hours(now=None):
+    """Checks if the current time is within US stock market hours."""
+    if now is None:
+        now = datetime.now(pytz.utc)
+    
+    eastern = pytz.timezone('US/Eastern')
+    now_eastern = now.astimezone(eastern)
+    
+    # Market hours: 9:30 AM to 4:00 PM
+    market_open = time(9, 30)
+    market_close = time(16, 0)
+    
+    # Check if it's a weekday and within market hours
+    is_weekday = now_eastern.weekday() < 5  # Monday=0, Sunday=6
+    is_market_time = market_open <= now_eastern.time() <= market_close
+    
+    return is_weekday and is_market_time
+
+def get_data_for_account(account_name, force_refresh=False):
     """
     Fetches and processes portfolio data for a given account name.
     This function is designed to be called by our API endpoint.
+    It uses a cache to avoid fetching data too frequently, with different
+    durations for market vs. off-market hours.
     """
+    cache_dir = os.path.join('..', 'cache', account_name)
+    os.makedirs(cache_dir, exist_ok=True)
+    portfolio_cache_file = os.path.join(cache_dir, 'portfolio_data.json')
+    
+    # Determine cache duration based on market hours
+    if is_market_hours():
+        CACHE_DURATION_SECONDS = 300  # 5 minutes
+        print("Market is open. Using 5-minute cache.")
+    else:
+        CACHE_DURATION_SECONDS = 3600  # 60 minutes
+        print("Market is closed. Using 60-minute cache.")
+
+    # --- Check for cached data first ---
+    if not force_refresh and os.path.exists(portfolio_cache_file):
+        with open(portfolio_cache_file, 'r') as f:
+            try:
+                cached_data = json.load(f)
+                last_fetched_time = datetime.fromisoformat(cached_data.get("timestamp"))
+                if (datetime.now() - last_fetched_time).total_seconds() < CACHE_DURATION_SECONDS:
+                    print(f"Serving cached portfolio data for {account_name}.")
+                    return cached_data.get("data"), 200
+            except (json.JSONDecodeError, KeyError, TypeError) as e:
+                print(f"Warning: Could not read cache file {portfolio_cache_file}. Refetching. Error: {e}")
+
+    print(f"Fetching fresh portfolio data for {account_name}.")
     try:
         with open("robinhood_secrets.json") as f:
             accounts_map = json.load(f)["ACCOUNTS"]
@@ -406,10 +454,18 @@ def get_data_for_account(account_name):
             "earnedPremium": total_earned_premium
         }
 
-        return {
-            "summary": summary,
-            "positions": all_positions_data
-        }, 200
+        # --- Save the fresh data to cache before returning ---
+        data_to_cache = {
+            "timestamp": datetime.now().isoformat(),
+            "data": {
+                "summary": summary,
+                "positions": all_positions_data
+            }
+        }
+        with open(portfolio_cache_file, 'w') as f:
+            json.dump(data_to_cache, f, indent=2)
+
+        return data_to_cache["data"], 200
 
     except Exception as e:
         # Adding more detailed error logging to the console
@@ -422,7 +478,9 @@ def get_data_for_account(account_name):
 @app.route('/api/portfolio/<string:account_name>', methods=['GET'])
 def get_portfolio(account_name):
     """API endpoint to get portfolio data."""
-    data, status_code = get_data_for_account(account_name)
+    # Check for the 'force' query parameter
+    force_refresh = request.args.get('force', 'false').lower() == 'true'
+    data, status_code = get_data_for_account(account_name, force_refresh=force_refresh)
     return jsonify(data), status_code
 
 @app.route('/api/accounts', methods=['GET'])

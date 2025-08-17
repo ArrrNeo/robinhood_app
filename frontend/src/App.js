@@ -9,6 +9,12 @@ const SortIcon = ({ direction }) => (
     </svg>
 );
 
+const RefreshIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.664 0l3.181-3.183m-11.664 0l3.181-3.183a8.25 8.25 0 00-11.664 0l3.181 3.183" />
+    </svg>
+);
+
 const GearIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
         <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.438.995s.145.755.438.995l1.003.827c.424.35.534.954.26 1.431l-1.296-2.247a1.125 1.125 0 01-1.37.49l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.332.183-.582.495-.645.87l-.213 1.28c-.09.543-.56.94-1.11.94h-2.593c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.063-.374-.313-.686-.645-.87a6.52 6.52 0 01-.22-.127c-.324-.196-.72-.257-1.075-.124l-1.217.456a1.125 1.125 0 01-1.37-.49l-1.296-2.247a1.125 1.125 0 01.26-1.431l1.003-.827c.293-.24.438.613.438.995s-.145-.755-.438-.995l-1.003-.827a1.125 1.125 0 01-.26-1.431l1.296-2.247a1.125 1.125 0 011.37-.49l1.217.456c.355.133.75.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.645-.87l.213-1.281z" />
@@ -233,49 +239,57 @@ function App() {
         }
     }, [selectedAccount]);
 
-    useEffect(() => {
+    const fetchData = useCallback(async (force = false) => {
         if (!selectedAccount) return;
 
-        const fetchData = async () => {
-            setLoading(true);
-            setError(null);
+        setLoading(true);
+        setError(null);
+        // Don't clear portfolio data on forced refresh for a smoother experience
+        if (!force) {
             setPortfolioData(null);
-            try {
-                const [portfolioRes, notesRes] = await Promise.all([
-                    fetch(`http://192.168.4.42:5001/api/portfolio/${selectedAccount}`),
-                    fetch(`http://192.168.4.42:5001/api/notes/${selectedAccount}`)
-                ]);
+        }
 
-                if (!portfolioRes.ok) {
-                    const errData = await portfolioRes.json();
-                    throw new Error(errData.error || `HTTP error! status: ${portfolioRes.status}`);
-                }
-                if (!notesRes.ok) {
-                    console.warn(`Could not fetch notes for ${selectedAccount}. Status: ${notesRes.status}`);
-                }
+        try {
+            const portfolioUrl = `http://192.168.4.42:5001/api/portfolio/${selectedAccount}${force ? '?force=true' : ''}`;
+            const notesUrl = `http://192.168.4.42:5001/api/notes/${selectedAccount}`;
 
-                const portfolioResult = await portfolioRes.json();
-                const notesResult = notesRes.ok ? await notesRes.json() : {};
+            const [portfolioRes, notesRes] = await Promise.all([
+                fetch(portfolioUrl),
+                fetch(notesUrl)
+            ]);
 
-                if (portfolioResult.error) throw new Error(portfolioResult.error);
-
-                const positionsWithNotes = portfolioResult.positions.map(pos => ({
-                    ...pos,
-                    note: notesResult[pos.ticker] || ''
-                }));
-
-                setPortfolioData({ ...portfolioResult, positions: positionsWithNotes });
-
-            } catch (e) {
-                setError(`Failed to fetch portfolio data for ${selectedAccount}. Error: ${e.message}`);
-                console.error(e);
-            } finally {
-                setLoading(false);
+            if (!portfolioRes.ok) {
+                const errData = await portfolioRes.json();
+                throw new Error(errData.error || `HTTP error! status: ${portfolioRes.status}`);
             }
-        };
+            if (!notesRes.ok) {
+                console.warn(`Could not fetch notes for ${selectedAccount}. Status: ${notesRes.status}`);
+            }
 
-        fetchData();
+            const portfolioResult = await portfolioRes.json();
+            const notesResult = notesRes.ok ? await notesRes.json() : {};
+
+            if (portfolioResult.error) throw new Error(portfolioResult.error);
+
+            const positionsWithNotes = portfolioResult.positions.map(pos => ({
+                ...pos,
+                note: notesResult[pos.ticker] || ''
+            }));
+
+            setPortfolioData({ ...portfolioResult, positions: positionsWithNotes });
+
+        } catch (e) {
+            setError(`Failed to fetch portfolio data for ${selectedAccount}. Error: ${e.message}`);
+            console.error(e);
+        } finally {
+            setLoading(false);
+        }
     }, [selectedAccount]);
+
+
+    useEffect(() => {
+        fetchData();
+    }, [selectedAccount, fetchData]);
 
     const renderPositionRow = (pos) => {
         const isOption = pos.type === 'option';
@@ -385,30 +399,35 @@ function App() {
                 <div className="bg-gray-800/50 border border-gray-700 rounded-lg overflow-x-auto">
                     <div className="flex justify-between items-center p-4 bg-gray-800 border-b border-gray-700">
                         <h3 className="text-lg font-semibold text-white">Positions</h3>
-                        <div className="relative" ref={settingsRef}>
-                            <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="p-2 rounded-full hover:bg-gray-700 transition-colors">
-                                <GearIcon />
+                        <div className="flex items-center space-x-2">
+                            <button onClick={() => fetchData(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" title="Force Refresh">
+                                <RefreshIcon />
                             </button>
-                            {isSettingsOpen && (
-                                <div className="absolute right-0 mt-2 w-56 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-20">
-                                    <div className="p-3 border-b border-gray-600">
-                                        <h4 className="font-semibold text-white">Display Columns</h4>
+                            <div className="relative" ref={settingsRef}>
+                                <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="p-2 rounded-full hover:bg-gray-700 transition-colors">
+                                    <GearIcon />
+                                </button>
+                                {isSettingsOpen && (
+                                    <div className="absolute right-0 mt-2 w-56 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-20">
+                                        <div className="p-3 border-b border-gray-600">
+                                            <h4 className="font-semibold text-white">Display Columns</h4>
+                                        </div>
+                                        <div className="p-2 max-h-96 overflow-y-auto">
+                                            {Object.entries(columns).map(([key, { label, visible }]) => (
+                                                <label key={key} className="flex items-center space-x-3 px-3 py-2 cursor-pointer hover:bg-gray-700 rounded-md">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={visible}
+                                                        onChange={() => handleColumnToggle(key)}
+                                                        className="form-checkbox h-4 w-4 bg-gray-700 border-gray-500 rounded text-blue-500 focus:ring-offset-0 focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                    <span className="text-gray-300 select-none">{label}</span>
+                                                </label>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div className="p-2 max-h-96 overflow-y-auto">
-                                        {Object.entries(columns).map(([key, { label, visible }]) => (
-                                            <label key={key} className="flex items-center space-x-3 px-3 py-2 cursor-pointer hover:bg-gray-700 rounded-md">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={visible}
-                                                    onChange={() => handleColumnToggle(key)}
-                                                    className="form-checkbox h-4 w-4 bg-gray-700 border-gray-500 rounded text-blue-500 focus:ring-offset-0 focus:ring-2 focus:ring-blue-500"
-                                                />
-                                                <span className="text-gray-300 select-none">{label}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
+                                )}
+                            </div>
                         </div>
                     </div>
                     <div className="overflow-x-auto">
