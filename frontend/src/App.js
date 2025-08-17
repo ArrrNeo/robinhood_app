@@ -1,7 +1,13 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import './index.css';
 
 // --- Helper Components ---
+
+const SortIcon = ({ direction }) => (
+    <svg className="w-4 h-4 inline-block ml-1 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={direction === 'ascending' ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"}></path>
+    </svg>
+);
 
 const GearIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
@@ -93,6 +99,7 @@ function App() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [sortConfig, setSortConfig] = useState({ key: 'marketValue', direction: 'descending' });
     const settingsRef = useRef(null);
 
     const initialColumns = {
@@ -135,6 +142,32 @@ function App() {
             return initialColumns;
         }
     });
+
+    const sortedPositions = useMemo(() => {
+        if (!portfolioData || !portfolioData.positions) return [];
+        let sortableItems = [...portfolioData.positions];
+        if (sortConfig.key) {
+            sortableItems.sort((a, b) => {
+                if (a[sortConfig.key] < b[sortConfig.key]) {
+                    return sortConfig.direction === 'ascending' ? -1 : 1;
+                }
+                if (a[sortConfig.key] > b[sortConfig.key]) {
+                    return sortConfig.direction === 'ascending' ? 1 : -1;
+                }
+                return 0;
+            });
+        }
+        return sortableItems;
+    }, [portfolioData, sortConfig]);
+
+    const requestSort = (key) => {
+        let direction = 'ascending';
+        if (sortConfig.key === key && sortConfig.direction === 'ascending') {
+            direction = 'descending';
+        }
+        setSortConfig({ key, direction });
+    };
+
 
     useEffect(() => {
         localStorage.setItem('portfolio-columns', JSON.stringify(columns));
@@ -383,7 +416,12 @@ function App() {
                             <thead className="bg-gray-800 border-b border-gray-700">
                                 <tr>
                                     {Object.entries(columns).map(([key, { label, visible }]) =>
-                                        visible ? <th key={key} className="p-4 text-sm font-semibold text-gray-400 tracking-wider">{label}</th> : null
+                                        visible ? (
+                                            <th key={key} className="p-4 text-sm font-semibold text-gray-400 tracking-wider cursor-pointer" onClick={() => requestSort(key)}>
+                                                {label}
+                                                {sortConfig.key === key && <SortIcon direction={sortConfig.direction} />}
+                                            </th>
+                                        ) : null
                                     )}
                                 </tr>
                             </thead>
@@ -391,7 +429,7 @@ function App() {
                                 {loading || !portfolioData ? (
                                     Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} columns={columns} />)
                                 ) : (
-                                    portfolioData.positions.length > 0 ? portfolioData.positions.map(renderPositionRow) : (
+                                    sortedPositions.length > 0 ? sortedPositions.map(renderPositionRow) : (
                                         <tr>
                                             <td colSpan={Object.values(columns).filter(c => c.visible).length} className="text-center p-8 text-gray-400">No open positions found in this account.</td>
                                         </tr>
