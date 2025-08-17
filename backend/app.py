@@ -158,12 +158,33 @@ def calculate_total_theta_premium_for_order_list(orders: list[dict]) -> dict[str
     # Round the final results
     return {t: round(p, 2) for t, p in premium_by_ticker.items()}
 
-def calculate_theta_premium_for_account(account_number):
+def calculate_theta_premium_for_account(account_number, account_name):
     """
     Calculates the net premium from all historical filled option orders
-    and groups it by ticker.
+    and groups it by ticker, using a cache to avoid reprocessing orders.
     """
-    premiums = defaultdict(float)
+    cache_dir = os.path.join('..', 'cache', account_name)
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_file = os.path.join(cache_dir, 'earned_premium.json')
+
+    # Load cached data if it exists
+    cached_data = {"processed_order_ids": [], "premiums_by_ticker": {}}
+    if os.path.exists(cache_file):
+        with open(cache_file, 'r') as f:
+            try:
+                cached_data = json.load(f)
+                # Ensure keys exist
+                if "processed_order_ids" not in cached_data:
+                    cached_data["processed_order_ids"] = []
+                if "premiums_by_ticker" not in cached_data:
+                    cached_data["premiums_by_ticker"] = {}
+            except json.JSONDecodeError:
+                print(f"Warning: Could not decode JSON from {cache_file}. Starting fresh.")
+
+    processed_order_ids = set(cached_data["processed_order_ids"])
+    premiums = defaultdict(float, cached_data["premiums_by_ticker"])
+    new_orders_processed = False
+
     try:
         all_orders = r.orders.get_all_option_orders(account_number=account_number)
         if not all_orders:
@@ -172,17 +193,33 @@ def calculate_theta_premium_for_account(account_number):
         # todo: debug if calculate_total_theta_premium_for_order_list returns correct calculated premium. compare against exiting or legacy
         # return calculate_total_theta_premium_for_order_list(all_orders)
         for order in all_orders:
+            order_id = order.get("id")
+            if not order_id or order_id in processed_order_ids:
+                continue
+
             if not is_order_eligible_for_premium(order):
                 continue
 
+            new_orders_processed = True
+            processed_order_ids.add(order_id)
+
             ticker = order.get("chain_symbol")
             direction = order.get("direction") # Use 'direction' for overall order credit/debit
-            amount = float(order.get("net_amount", 0)) # Use 'price' which is the net amount for the order
+            amount = float(order.get("net_amount", 0)) # Use 'net_amount' which is the net amount for the order
             quantity = float(order.get("quantity", 0))
             if not all([ticker, direction, amount, quantity]):
                 continue
             net_amount = amount * quantity
             premiums[ticker] += net_amount if direction == "credit" else -net_amount
+
+        # Save back to cache if new orders were processed
+        if new_orders_processed:
+            with open(cache_file, 'w') as f:
+                json.dump({
+                    "processed_order_ids": list(processed_order_ids),
+                    "premiums_by_ticker": premiums
+                }, f, indent=2)
+
         return premiums
     except Exception as e:
         print(f"ERROR in calculate_theta_premium_for_account: {e}")
@@ -218,7 +255,7 @@ def get_data_for_account(account_name):
             return {"error": "Account not found"}, 404
 
         # --- Calculate Earned Premium ---
-        premiums_by_ticker = calculate_theta_premium_for_account(account_number)
+        premiums_by_ticker = calculate_theta_premium_for_account(account_number, account_name)
         total_earned_premium = sum(premiums_by_ticker.values())
 
         # for total equity
