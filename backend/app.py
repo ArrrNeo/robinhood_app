@@ -10,6 +10,7 @@ from flask_cors import CORS
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request
 import robin_stocks.robinhood as r
+from cache_utils import cache_robinhood_response
 
 # order_considered_for_earned_premium_new_logic = []
 
@@ -38,6 +39,46 @@ try:
 except Exception as e:
     print(f"CRITICAL: Robinhood login failed on startup. {e}")
     # The app will still run, but API calls will fail.
+
+@cache_robinhood_response
+def get_all_option_orders(account_number):
+    return r.orders.get_all_option_orders(account_number=account_number)
+
+@cache_robinhood_response
+def load_portfolio_profile(account_number):
+    return r.account.load_portfolio_profile(account_number=account_number)
+
+@cache_robinhood_response
+def load_account_profile(account_number):
+    return r.account.load_account_profile(account_number=account_number)
+
+@cache_robinhood_response
+def get_open_stock_positions(account_number):
+    return r.account.get_open_stock_positions(account_number=account_number)
+
+@cache_robinhood_response
+def get_instrument_by_url(url):
+    return r.get_instrument_by_url(url)
+
+@cache_robinhood_response
+def get_fundamentals(ticker):
+    return r.stocks.get_fundamentals(ticker)
+
+@cache_robinhood_response
+def get_latest_price(ticker):
+    return r.get_latest_price(ticker)
+
+@cache_robinhood_response
+def get_name_by_symbol(ticker):
+    return r.stocks.get_name_by_symbol(ticker)
+
+@cache_robinhood_response
+def get_open_option_positions(account_number):
+    return r.options.get_open_option_positions(account_number=account_number)
+
+@cache_robinhood_response
+def get_option_market_data_by_id(option_id):
+    return r.options.get_option_market_data_by_id(option_id)
 
 def get_price_change_percentage(ticker, days_ago):
     """Uses yfinance to get the percentage change over a period."""
@@ -186,7 +227,7 @@ def calculate_theta_premium_for_account(account_number, account_name):
     new_orders_processed = False
 
     try:
-        all_orders = r.orders.get_all_option_orders(account_number=account_number)
+        all_orders = get_all_option_orders(account_number=account_number)
         if not all_orders:
             return premiums
 
@@ -307,16 +348,16 @@ def get_data_for_account(account_name, force_refresh=False):
         total_earned_premium = sum(premiums_by_ticker.values())
 
         # for total equity
-        portfolio = r.account.load_portfolio_profile(account_number=account_number + '/')
+        portfolio = load_portfolio_profile(account_number=account_number + '/')
         # for cash and uncleared deposits
-        account_details = r.account.load_account_profile(account_number=account_number + '/')
+        account_details = load_account_profile(account_number=account_number + '/')
 
         total_equity = float(portfolio.get('extended_hours_equity') or portfolio['equity'])
         cash = float(account_details.get('cash')) + float(account_details.get('uncleared_deposits'))
 
         total_pnl = 0
         # 1. Fetch and process stocks first
-        stock_positions = r.account.get_open_stock_positions(account_number=account_number)
+        stock_positions = get_open_stock_positions(account_number=account_number)
         all_positions_data = []
 
         if stock_positions:
@@ -324,10 +365,10 @@ def get_data_for_account(account_name, force_refresh=False):
                 if not pos or float(pos.get('quantity', 0)) == 0:
                     continue
 
-                instrument_data = r.get_instrument_by_url(pos['instrument'])
+                instrument_data = get_instrument_by_url(pos['instrument'])
                 ticker = instrument_data['symbol']
-                fundamentals = r.stocks.get_fundamentals(ticker)[0]
-                latest_price_str = r.get_latest_price(ticker)[0]
+                fundamentals = get_fundamentals(ticker)[0]
+                latest_price_str = get_latest_price(ticker)[0]
                 if not latest_price_str:
                     continue
 
@@ -350,7 +391,7 @@ def get_data_for_account(account_name, force_refresh=False):
                     "returnPct": (unrealized_pnl / (quantity * avg_cost)) * 100 if avg_cost > 0 else 0,
                     "strike": None, "expiry": None, "option_type": None,
                     "earnedPremium": premiums_by_ticker.get(ticker, 0.0),
-                    "name": r.stocks.get_name_by_symbol(ticker),
+                    "name": get_name_by_symbol(ticker),
                     "intraday_percent_change": (latest_price - float(pos['intraday_average_buy_price'])) * 100 / float(pos['intraday_average_buy_price']) if float(pos['intraday_average_buy_price']) != 0 else 0,
                     "pe_ratio": float(fundamentals.get('pe_ratio')) if fundamentals.get('pe_ratio') else 0.0,
                     "portfolio_percent": (market_value / total_equity) * 100 if total_equity > 0 else 0,
@@ -365,12 +406,12 @@ def get_data_for_account(account_name, force_refresh=False):
                 })
 
         # 2. then, Fetch and process options
-        option_positions = r.options.get_open_option_positions(account_number=account_number)
+        option_positions = get_open_option_positions(account_number=account_number)
         if option_positions:
             for pos in option_positions:
                 if not pos or float(pos['quantity']) == 0: continue
                 option_id = pos.get('option_id')
-                market_data_list = r.options.get_option_market_data_by_id(option_id)
+                market_data_list = get_option_market_data_by_id(option_id)
                 if not market_data_list or not market_data_list[0]: continue
                 market_data = market_data_list[0]
 
@@ -399,7 +440,7 @@ def get_data_for_account(account_name, force_refresh=False):
                     "returnPct": (pnl_per_share / avg_price) * 100 if avg_price > 0 else 0,
                     "strike": strike, "expiry": expiry, "option_type": option_type,
                     "earnedPremium": premiums_by_ticker.get(pos.get('chain_symbol'), 0.0),
-                    "name": r.stocks.get_name_by_symbol(pos.get('chain_symbol')),
+                    "name": get_name_by_symbol(pos.get('chain_symbol')),
                     "intraday_percent_change": 0,
                     "pe_ratio": 0,
                     "portfolio_percent": 0,
