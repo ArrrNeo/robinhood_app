@@ -203,8 +203,16 @@ function App() {
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
                 setAccounts(data);
-                if (data.length > 0) setSelectedAccount(data[0]);
-                else setLoading(false);
+
+                // Check local storage for the last selected account
+                const lastSelected = localStorage.getItem('selectedAccount');
+                if (lastSelected && data.includes(lastSelected)) {
+                    setSelectedAccount(lastSelected);
+                } else if (data.length > 0) {
+                    setSelectedAccount(data[0]);
+                } else {
+                    setLoading(false);
+                }
             } catch (e) {
                 setError('Failed to fetch accounts. Is the backend server running?');
                 setLoading(false);
@@ -213,6 +221,12 @@ function App() {
         };
         fetchAccounts();
     }, []);
+
+    useEffect(() => {
+        if (selectedAccount) {
+            localStorage.setItem('selectedAccount', selectedAccount);
+        }
+    }, [selectedAccount]);
 
     const handleSaveNote = useCallback(async (ticker, note) => {
         if (!selectedAccount) return;
@@ -242,12 +256,29 @@ function App() {
     const fetchData = useCallback(async (force = false) => {
         if (!selectedAccount) return;
 
-        setLoading(true);
-        setError(null);
-        // Don't clear portfolio data on forced refresh for a smoother experience
+        const cacheKey = `portfolio-data-${selectedAccount}`;
+
+        // If not forcing a refresh, try to load from cache first
         if (!force) {
-            setPortfolioData(null);
+            try {
+                const cached = localStorage.getItem(cacheKey);
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    // Optional: Add a timestamp to invalidate cache after some time
+                    setPortfolioData(parsed);
+                    setLoading(false); // Stop initial loading, but we'll still fetch in background
+                } else {
+                    setLoading(true);
+                }
+            } catch (e) {
+                console.error("Failed to read from cache", e);
+                setLoading(true);
+            }
+        } else {
+            setLoading(true);
         }
+
+        setError(null);
 
         try {
             const portfolioUrl = `http://192.168.4.42:5001/api/portfolio/${selectedAccount}${force ? '?force=true' : ''}`;
@@ -276,7 +307,15 @@ function App() {
                 note: notesResult[pos.ticker] || ''
             }));
 
-            setPortfolioData({ ...portfolioResult, positions: positionsWithNotes });
+            const finalData = { ...portfolioResult, positions: positionsWithNotes };
+            setPortfolioData(finalData);
+
+            // Save the fresh data to cache
+            try {
+                localStorage.setItem(cacheKey, JSON.stringify(finalData));
+            } catch (e) {
+                console.error("Failed to write to cache", e);
+            }
 
         } catch (e) {
             setError(`Failed to fetch portfolio data for ${selectedAccount}. Error: ${e.message}`);
@@ -356,9 +395,9 @@ function App() {
                 </header>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6 mb-8">
-                    {loading || !portfolioData ? (
+                    {loading && !portfolioData ? (
                         [...Array(6)].map((_, i) => <MetricCardSkeleton key={i} />)
-                    ) : (
+                    ) : portfolioData ? (
                         <>
                             <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
                                 <h3 className="text-gray-400 text-sm mb-2">Total Equity</h3>
@@ -393,7 +432,7 @@ function App() {
                                 <p className="text-3xl font-semibold text-white">{portfolioData.summary.totalTickers}</p>
                             </div>
                         </>
-                    )}
+                    ) : null}
                 </div>
 
                 <div className="bg-gray-800/50 border border-gray-700 rounded-lg overflow-x-auto">
@@ -445,14 +484,16 @@ function App() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {loading || !portfolioData ? (
+                                {loading && !portfolioData ? (
                                     Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} columns={columns} />)
+                                ) : sortedPositions.length > 0 ? (
+                                    sortedPositions.map(renderPositionRow)
                                 ) : (
-                                    sortedPositions.length > 0 ? sortedPositions.map(renderPositionRow) : (
-                                        <tr>
-                                            <td colSpan={Object.values(columns).filter(c => c.visible).length} className="text-center p-8 text-gray-400">No open positions found in this account.</td>
-                                        </tr>
-                                    )
+                                    <tr>
+                                        <td colSpan={Object.values(columns).filter(c => c.visible).length} className="text-center p-8 text-gray-400">
+                                            {portfolioData ? 'No open positions found in this account.' : ''}
+                                        </td>
+                                    </tr>
                                 )}
                             </tbody>
                         </table>
