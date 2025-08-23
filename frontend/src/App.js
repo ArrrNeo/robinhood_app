@@ -391,7 +391,7 @@ function App() {
 
                 <header className="mb-8">
                     <h2 className="text-2xl font-bold text-white capitalize">{selectedAccount.replace(/_/g, ' ')} Overview</h2>
-                    <p className="text-gray-400">Last updated: {new Date().toLocaleString()}</p>
+                    <p className="text-gray-400">Last updated: {portfolioData && portfolioData.timestamp ? new Date(portfolioData.timestamp).toLocaleString() : '...'}</p>
                 </header>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6 mb-8">

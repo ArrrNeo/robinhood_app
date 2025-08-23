@@ -330,7 +330,9 @@ def get_data_for_account(account_name, force_refresh=False):
                 last_fetched_time = datetime.fromisoformat(cached_data.get("timestamp"))
                 if (datetime.now() - last_fetched_time).total_seconds() < CACHE_DURATION_SECONDS:
                     print(f"Serving cached portfolio data for {account_name}.")
-                    return cached_data.get("data"), 200
+                    response_data = cached_data.get("data", {})
+                    response_data['timestamp'] = cached_data.get("timestamp")
+                    return response_data, 200
             except (json.JSONDecodeError, KeyError, TypeError) as e:
                 print(f"Warning: Could not read cache file {portfolio_cache_file}. Refetching. Error: {e}")
 
@@ -506,7 +508,9 @@ def get_data_for_account(account_name, force_refresh=False):
         with open(portfolio_cache_file, 'w') as f:
             json.dump(data_to_cache, f, indent=2)
 
-        return data_to_cache["data"], 200
+        response_data = data_to_cache.get("data", {})
+        response_data['timestamp'] = data_to_cache.get("timestamp")
+        return response_data, 200
 
     except Exception as e:
         # Adding more detailed error logging to the console
