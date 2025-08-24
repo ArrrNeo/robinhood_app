@@ -98,106 +98,48 @@ def get_price_change_percentage(ticker, days_ago):
         print(f"yfinance failed for {ticker} over {days_ago} days: {e}")
         return 0.0
 
-def is_order_eligible_for_premium(order):
-    """
-    Identifies if an option order is eligible for earned premium calculation.
-    Only 'sell to open' and 'buy to close' orders are eligible.
-    """
-    if order.get("state") != "filled" or not order.get("legs"):
-        return False
-    return any(
-        (leg["side"] == "sell" and leg["position_effect"] == "open") or \
-        (leg["side"] == "buy" and leg["position_effect"] == "close")
-        for leg in order["legs"]
-    )
-
-def classify_order_details(order: dict) -> dict:
+def is_order_eligible_for_premium(order: dict):
     """
     Analyzes a single order and returns a detailed classification.
     """
-    # Default values
-    classification = {
-        "order_type": "Unknown",
-        "strategy_type": "Unknown",
-        "is_theta_play_initiator": False,
-        "net_premium": 0.0,
-    }
+    state = order.get("state")
+    direction = order.get("direction")
+    legs = order.get("legs", [])
+    # default
+    is_theta_play_initiator = False
 
     if not order.get('legs'):
-        return classification
+        return None
 
-    # --- Part 1: Basic Info & Premium ---
+    if state != "filled":
+        return {"is_theta_play_initiator": False, "order_type": "Cancelled"}
+
     net_premium = float(order.get('net_amount', 0.0))
     if order.get('net_amount_direction') == 'debit':
         net_premium *= -1
-    classification['net_premium'] = net_premium
 
-    # --- Part 2: Determine Order Intent & Type ---
-    position_effects = {leg.get('position_effect') for leg in order['legs']}
-    is_opening = 'open' in position_effects
-    is_closing = 'close' in position_effects
+    # BTO: buy to open
+    # BTC: buy to close
+    # STO: sell to open
+    # STC: sell to close
 
-    # --- Part 3: Apply Logic based on Intent ---
-    if is_opening and not is_closing:
-        classification['order_type'] = "Opening"
-        if net_premium > 0:
-            classification['is_theta_play_initiator'] = True
-            classification['strategy_type'] = "Credit Strategy"
+    has_STO = any(l["side"] == "sell" and l["position_effect"] == "open" for l in legs)
+    has_BTC = any(l["side"] == "buy" and l["position_effect"] == "close" for l in legs)
+    has_BTO = any(l["side"] == "buy" and l["position_effect"] == "open" for l in legs)
+
+    if has_STO and has_BTC:
+        is_theta_play_initiator = True
+    elif has_STO:
+        # exclude pure debit spreads to open
+        if direction == "debit" and has_BTO:
+            is_theta_play_initiator = False
         else:
-            classification['strategy_type'] = "Debit Strategy"
+            is_theta_play_initiator = True
+    elif has_BTC:
+        if direction == "debit" and all(l["side"] == "buy" and l["position_effect"] == "close" for l in legs):
+            is_theta_play_initiator = True
 
-    elif is_closing and not is_opening:
-        classification['order_type'] = "Closing"
-        # Check for 2-leg spread closing
-        if len(order['legs']) == 2:
-            leg1, leg2 = order['legs']
-            # Ensure they are the same type (both calls or both puts)
-            if leg1.get('option_type') == leg2.get('option_type'):
-                buy_leg = leg1 if leg1['side'] == 'buy' else leg2
-                sell_leg = leg2 if leg1['side'] == 'buy' else leg1
-
-                # Use float for strike comparison
-                buy_strike = float(buy_leg['strike_price'])
-                sell_strike = float(sell_leg['strike_price'])
-
-                is_call = (leg1['option_type'] == 'call')
-
-                if (is_call and buy_strike < sell_strike) or \
-                   (not is_call and buy_strike > sell_strike):
-                    classification['strategy_type'] = "Closed Credit Spread"
-                else:
-                    classification['strategy_type'] = "Closed Debit Spread"
-
-    elif is_opening and is_closing:
-        classification['order_type'] = "Rolling"
-        classification['is_theta_play_initiator'] = True
-        classification['strategy_type'] = "Roll"
-
-    return classification
-
-def calculate_total_theta_premium_for_order_list(orders: list[dict]) -> dict[str, float]:
-    """
-    Takes a list of orders, identifies theta plays using detailed classification,
-    and returns the total premium earned/lost per ticker.
-    """
-    premium_by_ticker = {}
-    for order in orders:
-        ticker = order.get('chain_symbol')
-        if not ticker:
-            continue
-
-        details = classify_order_details(order)
-
-        if details['is_theta_play_initiator']:
-            # order_considered_for_earned_premium_new_logic.append(order)
-            premium_amount = details['net_premium']
-            premium_by_ticker.setdefault(ticker, 0.0)
-            premium_by_ticker[ticker] += premium_amount
-
-    # with open('order_considered_for_earned_premium_new_logic.json', 'w') as f:
-    #     json.dump(order_considered_for_earned_premium_new_logic, f, indent=4)
-    # Round the final results
-    return {t: round(p, 2) for t, p in premium_by_ticker.items()}
+    return  is_theta_play_initiator
 
 def calculate_theta_premium_for_account(account_number, account_name):
     """
@@ -231,8 +173,6 @@ def calculate_theta_premium_for_account(account_number, account_name):
         if not all_orders:
             return premiums
 
-        # todo: debug if calculate_total_theta_premium_for_order_list returns correct calculated premium. compare against exiting or legacy
-        # return calculate_total_theta_premium_for_order_list(all_orders)
         for order in all_orders:
             order_id = order.get("id")
             if not order_id or order_id in processed_order_ids:
