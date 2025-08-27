@@ -69,11 +69,7 @@ def login_to_robinhood():
     """Logs into Robinhood using credentials and MFA code."""
     try:
         mfa_code = pyotp.TOTP(SECRETS['MY_2FA_APP_HERE']).now()
-        login_info = robin_stocks.robinhood.login(
-            SECRETS['USER'],
-            SECRETS['PASSWORD'],
-            mfa_code=mfa_code
-        )
+        login_info = robin_stocks.robinhood.login(SECRETS['USER'], SECRETS['PASSWORD'], mfa_code=mfa_code)
         print("Login successful.")
         return login_info
     except Exception as e:

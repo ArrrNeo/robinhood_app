@@ -41,8 +41,8 @@ except Exception as e:
     # The app will still run, but API calls will fail.
 
 @cache_robinhood_response
-def get_all_option_orders(account_number):
-    return r.orders.get_all_option_orders(account_number=account_number)
+def get_all_option_orders(account_number, start_date=None):
+    return r.orders.get_all_option_orders(account_number=account_number, start_date=start_date)
 
 @cache_robinhood_response
 def load_portfolio_profile(account_number):
@@ -79,6 +79,10 @@ def get_open_option_positions(account_number):
 @cache_robinhood_response
 def get_option_market_data_by_id(option_id):
     return r.options.get_option_market_data_by_id(option_id)
+
+@cache_robinhood_response
+def get_all_stock_orders(account_number, start_date=None):
+    return r.orders.get_all_stock_orders(account_number=account_number, start_date=start_date)
 
 def get_price_change_percentage(ticker, days_ago):
     """Uses yfinance to get the percentage change over a period."""
@@ -229,18 +233,18 @@ def is_market_hours(now=None):
     """Checks if the current time is within US stock market hours."""
     if now is None:
         now = datetime.now(pytz.utc)
-    
+
     eastern = pytz.timezone('US/Eastern')
     now_eastern = now.astimezone(eastern)
-    
+
     # Market hours: 9:30 AM to 4:00 PM
     market_open = time(9, 30)
     market_close = time(16, 0)
-    
+
     # Check if it's a weekday and within market hours
     is_weekday = now_eastern.weekday() < 5  # Monday=0, Sunday=6
     is_market_time = market_open <= now_eastern.time() <= market_close
-    
+
     return is_weekday and is_market_time
 
 def get_data_for_account(account_name, force_refresh=False):
@@ -253,7 +257,7 @@ def get_data_for_account(account_name, force_refresh=False):
     cache_dir = os.path.join('..', 'cache', account_name)
     os.makedirs(cache_dir, exist_ok=True)
     portfolio_cache_file = os.path.join(cache_dir, 'portfolio_data.json')
-    
+
     # Determine cache duration based on market hours
     if is_market_hours():
         CACHE_DURATION_SECONDS = 300  # 5 minutes
@@ -416,12 +420,12 @@ def get_data_for_account(account_name, force_refresh=False):
             "one_year_change": 0
         })
 
-        if float(portfolio['equity_previous_close']) == 0:
+        if float(portfolio['adjusted_portfolio_equity_previous_close']) == 0:
             change_today_abs = 0.0
             change_today_pct = 0.0
         else:
-            change_today_abs = total_equity - float(portfolio['equity_previous_close'])
-            change_today_pct = (change_today_abs / float(portfolio['equity_previous_close'])) * 100
+            change_today_abs = total_equity - float(portfolio['adjusted_portfolio_equity_previous_close'])
+            change_today_pct = (change_today_abs / float(portfolio['adjusted_portfolio_equity_previous_close'])) * 100
 
         # 4. Calculate unique tickers
         # Exclude 'USD Cash' from the count
@@ -502,6 +506,83 @@ def update_note(account_name):
     with open(notes_path, 'w') as f:
         json.dump(notes, f, indent=2)
     return jsonify({"success": True, **data})
+
+@app.route('/api/orders/<string:account_name>', methods=['GET'])
+def get_orders(account_name):
+    """API endpoint to get historical orders for a specific account."""
+    try:
+        with open("robinhood_secrets.json") as f:
+            accounts_map = json.load(f)["ACCOUNTS"]
+        account_number = accounts_map.get(account_name)
+        if not account_number:
+            return jsonify({"error": "Account not found"}), 404
+
+        start_date_str = request.args.get('start_date')
+        end_date_str = request.args.get('end_date')
+
+        stock_orders = get_all_stock_orders(account_number, start_date=start_date_str)
+        for order in stock_orders:
+            order['ticker'] = get_instrument_by_url(order['instrument'])['symbol']
+            print (order['ticker'])
+
+        option_orders = get_all_option_orders(account_number, start_date=start_date_str)
+        # for order in option_orders:
+        #     order['ticker'] = order['chain_symbol']
+
+        all_orders = stock_orders + option_orders
+
+        # Sort orders by date, most recent first
+        all_orders.sort(key=lambda o: o.get('updated_at'), reverse=True)
+
+        # Filter by date if parameters are provided
+        end_date = None
+        start_date = None
+        filtered_all_orders = []
+
+        if start_date_str:
+            start_date = datetime.fromisoformat(start_date_str)
+
+        if end_date_str:
+            end_date = datetime.fromisoformat(end_date_str)
+
+
+        for order in all_orders:
+            order_later_than_start = None
+            order_earlienr_than_end = None
+
+            try:
+                if start_date:
+                    order_later_than_start = (datetime.fromisoformat(order['updated_at'].replace('Z', '+00:00')) >= start_date)
+                if end_date:
+                    order_earlienr_than_end = (datetime.fromisoformat(order['updated_at'].replace('Z', '+00:00')) <= end_date)
+            except:
+                pp.pprint(order)
+                continue
+
+            if start_date and end_date:
+                if order_later_than_start and order_earlienr_than_end:
+                    filtered_all_orders.append(order)
+                    continue
+            elif start_date:
+                if order_later_than_start:
+                    filtered_all_orders.append(order)
+                    continue
+            elif end_date:
+                if order_earlienr_than_end:
+                    filtered_all_orders.append(order)
+                    continue
+            else:
+                filtered_all_orders.append(order)
+                continue
+
+        with open('all_orders_' + account_number + '.json', 'w') as f:
+            json.dump(all_orders, f, indent=4)
+        return jsonify(all_orders)
+
+    except Exception as e:
+        print(f"ERROR in get_orders for account '{account_name}': {e}")
+        traceback.print_exc()
+        return jsonify({"error": f"An internal error occurred. Check backend console. Error: {e}"}), 500
 
 # --- Run the App ---
 if __name__ == '__main__':

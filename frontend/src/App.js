@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import './index.css';
+import OrdersPage from './Orders';
 
 // --- Helper Components ---
 
@@ -106,6 +107,7 @@ function App() {
     const [error, setError] = useState(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [sortConfig, setSortConfig] = useState({ key: 'marketValue', direction: 'descending' });
+    const [currentPage, setCurrentPage] = useState('portfolio'); // 'portfolio' or 'orders'
     const settingsRef = useRef(null);
 
     const initialColumns = {
@@ -373,132 +375,158 @@ function App() {
         <div className="bg-gray-900 text-gray-200 font-sans flex min-h-screen" style={{fontFamily: "'Inter', sans-serif"}}>
             <aside className="w-60 bg-black/30 p-6 border-r border-gray-700 flex flex-col flex-shrink-0">
                 <h1 className="text-xl font-bold mb-8 text-white">Portfolio Tracker</h1>
-                <nav className="flex flex-col space-y-2">
-                    {accounts.map(acc => (
+                <div className="mb-8">
+                    <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Accounts</h2>
+                    <nav className="flex flex-col space-y-2">
+                        {accounts.map(acc => (
+                            <button
+                                key={acc}
+                                onClick={() => setSelectedAccount(acc)}
+                                className={`text-left px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors w-full ${selectedAccount === acc ? 'bg-gray-700 font-semibold text-white' : ''}`}
+                            >
+                                {acc.replace(/_/g, ' ')}
+                            </button>
+                        ))}
+                    </nav>
+                </div>
+                <div>
+                    <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Views</h2>
+                    <nav className="flex flex-col space-y-2">
                         <button
-                            key={acc}
-                            onClick={() => setSelectedAccount(acc)}
-                            className={`text-left px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors w-full ${selectedAccount === acc ? 'bg-gray-700 font-semibold text-white' : ''}`}
+                            onClick={() => setCurrentPage('portfolio')}
+                            className={`text-left px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors w-full ${currentPage === 'portfolio' ? 'bg-gray-700 font-semibold text-white' : ''}`}
                         >
-                            {acc.replace(/_/g, ' ')}
+                            Portfolio
                         </button>
-                    ))}
-                </nav>
+                        <button
+                            onClick={() => setCurrentPage('orders')}
+                            className={`text-left px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors w-full ${currentPage === 'orders' ? 'bg-gray-700 font-semibold text-white' : ''}`}
+                        >
+                            Orders
+                        </button>
+                    </nav>
+                </div>
             </aside>
 
             <main className="flex-1 p-8 overflow-auto">
-                {error && <div className="bg-red-800/50 text-red-200 p-4 rounded-lg mb-6 border border-red-700">{error}</div>}
+                {currentPage === 'portfolio' ? (
+                    <>
+                        {error && <div className="bg-red-800/50 text-red-200 p-4 rounded-lg mb-6 border border-red-700">{error}</div>}
 
-                <header className="mb-8">
-                    <h2 className="text-2xl font-bold text-white capitalize">{selectedAccount.replace(/_/g, ' ')} Overview</h2>
-                    <p className="text-gray-400">Last updated: {portfolioData && portfolioData.timestamp ? new Date(portfolioData.timestamp).toLocaleString() : '...'}</p>
-                </header>
+                        <header className="mb-8">
+                            <h2 className="text-2xl font-bold text-white capitalize">{selectedAccount.replace(/_/g, ' ')} Overview</h2>
+                            <p className="text-gray-400">Last updated: {portfolioData && portfolioData.timestamp ? new Date(portfolioData.timestamp).toLocaleString() : '...'}</p>
+                        </header>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6 mb-8">
-                    {loading && !portfolioData ? (
-                        [...Array(6)].map((_, i) => <MetricCardSkeleton key={i} />)
-                    ) : portfolioData ? (
-                        <>
-                            <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
-                                <h3 className="text-gray-400 text-sm mb-2">Total Equity</h3>
-                                <p className="text-3xl font-semibold text-white">{formatCurrency(portfolioData.summary.totalEquity)}</p>
-                            </div>
-                            <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
-                                <h3 className="text-gray-400 text-sm mb-2">Day's P/L</h3>
-                                <p className={`text-3xl font-semibold ${portfolioData.summary.changeTodayAbs >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                    {formatCurrency(portfolioData.summary.changeTodayAbs, true)}
-                                </p>
-                            </div>
-                            <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
-                                <h3 className="text-gray-400 text-sm mb-2">Total P/L</h3>
-                                <p className={`text-3xl font-semibold ${portfolioData.summary.totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                    {formatCurrency(portfolioData.summary.totalPnl, true)}
-                                </p>
-                            </div>
-                            <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
-                                <h3 className="text-gray-400 text-sm mb-2">Day's P/L %</h3>
-                                <p className={`text-3xl font-semibold ${portfolioData.summary.changeTodayPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                    {formatPercent(portfolioData.summary.changeTodayPct)}
-                                </p>
-                            </div>
-                            <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
-                                <h3 className="text-gray-400 text-sm mb-2">Earned Premium</h3>
-                                <p className="text-3xl font-semibold text-green-400">
-                                    {formatCurrency(portfolioData.summary.earnedPremium)}
-                                </p>
-                            </div>
-                            <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
-                                <h3 className="text-gray-400 text-sm mb-2">Total Tickers</h3>
-                                <p className="text-3xl font-semibold text-white">{portfolioData.summary.totalTickers}</p>
-                            </div>
-                        </>
-                    ) : null}
-                </div>
-
-                <div className="bg-gray-800/50 border border-gray-700 rounded-lg overflow-x-auto">
-                    <div className="flex justify-between items-center p-4 bg-gray-800 border-b border-gray-700">
-                        <h3 className="text-lg font-semibold text-white">Positions</h3>
-                        <div className="flex items-center space-x-2">
-                            <button onClick={() => fetchData(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" title="Force Refresh">
-                                <RefreshIcon />
-                            </button>
-                            <div className="relative" ref={settingsRef}>
-                                <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="p-2 rounded-full hover:bg-gray-700 transition-colors">
-                                    <GearIcon />
-                                </button>
-                                {isSettingsOpen && (
-                                    <div className="absolute right-0 mt-2 w-56 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-20">
-                                        <div className="p-3 border-b border-gray-600">
-                                            <h4 className="font-semibold text-white">Display Columns</h4>
-                                        </div>
-                                        <div className="p-2 max-h-96 overflow-y-auto">
-                                            {Object.entries(columns).map(([key, { label, visible }]) => (
-                                                <label key={key} className="flex items-center space-x-3 px-3 py-2 cursor-pointer hover:bg-gray-700 rounded-md">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={visible}
-                                                        onChange={() => handleColumnToggle(key)}
-                                                        className="form-checkbox h-4 w-4 bg-gray-700 border-gray-500 rounded text-blue-500 focus:ring-offset-0 focus:ring-2 focus:ring-blue-500"
-                                                    />
-                                                    <span className="text-gray-300 select-none">{label}</span>
-                                                </label>
-                                            ))}
-                                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6 mb-8">
+                            {loading && !portfolioData ? (
+                                [...Array(6)].map((_, i) => <MetricCardSkeleton key={i} />)
+                            ) : portfolioData ? (
+                                <>
+                                    <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                        <h3 className="text-gray-400 text-sm mb-2">Total Equity</h3>
+                                        <p className="text-3xl font-semibold text-white">{formatCurrency(portfolioData.summary.totalEquity)}</p>
                                     </div>
-                                )}
+                                    <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                        <h3 className="text-gray-400 text-sm mb-2">Day's P/L</h3>
+                                        <p className={`text-3xl font-semibold ${portfolioData.summary.changeTodayAbs >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                            {formatCurrency(portfolioData.summary.changeTodayAbs, true)}
+                                        </p>
+                                    </div>
+                                    <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                        <h3 className="text-gray-400 text-sm mb-2">Total P/L</h3>
+                                        <p className={`text-3xl font-semibold ${portfolioData.summary.totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                            {formatCurrency(portfolioData.summary.totalPnl, true)}
+                                        </p>
+                                    </div>
+                                    <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                        <h3 className="text-gray-400 text-sm mb-2">Day's P/L %</h3>
+                                        <p className={`text-3xl font-semibold ${portfolioData.summary.changeTodayPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                            {formatPercent(portfolioData.summary.changeTodayPct)}
+                                        </p>
+                                    </div>
+                                    <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                        <h3 className="text-gray-400 text-sm mb-2">Earned Premium</h3>
+                                        <p className="text-3xl font-semibold text-green-400">
+                                            {formatCurrency(portfolioData.summary.earnedPremium)}
+                                        </p>
+                                    </div>
+                                    <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                        <h3 className="text-gray-400 text-sm mb-2">Total Tickers</h3>
+                                        <p className="text-3xl font-semibold text-white">{portfolioData.summary.totalTickers}</p>
+                                    </div>
+                                </>
+                            ) : null}
+                        </div>
+
+                        <div className="bg-gray-800/50 border border-gray-700 rounded-lg overflow-x-auto">
+                            <div className="flex justify-between items-center p-4 bg-gray-800 border-b border-gray-700">
+                                <h3 className="text-lg font-semibold text-white">Positions</h3>
+                                <div className="flex items-center space-x-2">
+                                    <button onClick={() => fetchData(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" title="Force Refresh">
+                                        <RefreshIcon />
+                                    </button>
+                                    <div className="relative" ref={settingsRef}>
+                                        <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="p-2 rounded-full hover:bg-gray-700 transition-colors">
+                                            <GearIcon />
+                                        </button>
+                                        {isSettingsOpen && (
+                                            <div className="absolute right-0 mt-2 w-56 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-20">
+                                                <div className="p-3 border-b border-gray-600">
+                                                    <h4 className="font-semibold text-white">Display Columns</h4>
+                                                </div>
+                                                <div className="p-2 max-h-96 overflow-y-auto">
+                                                    {Object.entries(columns).map(([key, { label, visible }]) => (
+                                                        <label key={key} className="flex items-center space-x-3 px-3 py-2 cursor-pointer hover:bg-gray-700 rounded-md">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={visible}
+                                                                onChange={() => handleColumnToggle(key)}
+                                                                className="form-checkbox h-4 w-4 bg-gray-700 border-gray-500 rounded text-blue-500 focus:ring-offset-0 focus:ring-2 focus:ring-blue-500"
+                                                            />
+                                                            <span className="text-gray-300 select-none">{label}</span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left min-w-[1200px]">
+                                    <thead className="bg-gray-800 border-b border-gray-700">
+                                        <tr>
+                                            {Object.entries(columns).map(([key, { label, visible }]) =>
+                                                visible ? (
+                                                    <th key={key} className="p-4 text-sm font-semibold text-gray-400 tracking-wider cursor-pointer" onClick={() => requestSort(key)}>
+                                                        {label}
+                                                        {sortConfig.key === key && <SortIcon direction={sortConfig.direction} />}
+                                                    </th>
+                                                ) : null
+                                            )}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {loading && !portfolioData ? (
+                                            Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} columns={columns} />)
+                                        ) : sortedPositions.length > 0 ? (
+                                            sortedPositions.map(renderPositionRow)
+                                        ) : (
+                                            <tr>
+                                                <td colSpan={Object.values(columns).filter(c => c.visible).length} className="text-center p-8 text-gray-400">
+                                                    {portfolioData ? 'No open positions found in this account.' : ''}
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
-                    </div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left min-w-[1200px]">
-                            <thead className="bg-gray-800 border-b border-gray-700">
-                                <tr>
-                                    {Object.entries(columns).map(([key, { label, visible }]) =>
-                                        visible ? (
-                                            <th key={key} className="p-4 text-sm font-semibold text-gray-400 tracking-wider cursor-pointer" onClick={() => requestSort(key)}>
-                                                {label}
-                                                {sortConfig.key === key && <SortIcon direction={sortConfig.direction} />}
-                                            </th>
-                                        ) : null
-                                    )}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {loading && !portfolioData ? (
-                                    Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} columns={columns} />)
-                                ) : sortedPositions.length > 0 ? (
-                                    sortedPositions.map(renderPositionRow)
-                                ) : (
-                                    <tr>
-                                        <td colSpan={Object.values(columns).filter(c => c.visible).length} className="text-center p-8 text-gray-400">
-                                            {portfolioData ? 'No open positions found in this account.' : ''}
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                    </>
+                ) : (
+                    <OrdersPage selectedAccount={selectedAccount} />
+                )}
             </main>
         </div>
     );
