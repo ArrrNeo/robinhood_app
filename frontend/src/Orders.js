@@ -99,7 +99,7 @@ const OrdersPage = ({ selectedAccount }) => {
     };
 
     const columns = [
-        { key: 'last_transaction_at', label: 'Date' },
+        { key: 'updated_at', label: 'Date' },
         { key: 'ticker', label: 'Ticker' },
         { key: 'type', label: 'Type' },
         { key: 'side', label: 'Side' },
@@ -148,7 +148,7 @@ const OrdersPage = ({ selectedAccount }) => {
                             sortedOrders.map((order) => (
                                 <tr key={order.id} className="border-b border-gray-700 last:border-b-0 hover:bg-gray-700/50 transition-colors">
                                     <td className="p-4 font-mono">{new Date(order.last_transaction_at).toLocaleString()}</td>
-                                    <td className="p-4 font-bold text-white">{order.chain_symbol || order.instrument?.symbol || 'N/A'}</td>
+                                    <td className="p-4 font-bold text-white">{order.ticker || 'N/A'}</td>
                                     <td className="p-4 font-mono capitalize">{order.legs ? 'Option' : 'Stock'}</td>
                                     <td className="p-4 font-mono capitalize">{order.side}</td>
                                     <td className="p-4 font-mono">{parseFloat(order.quantity).toFixed(2)}</td>

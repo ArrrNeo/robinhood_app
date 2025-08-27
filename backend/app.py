@@ -56,9 +56,33 @@ def load_account_profile(account_number):
 def get_open_stock_positions(account_number):
     return r.account.get_open_stock_positions(account_number=account_number)
 
-@cache_robinhood_response
 def get_instrument_by_url(url):
     return r.get_instrument_by_url(url)
+
+# --- Caching for get_instrument_by_url ---
+INSTRUMENT_URL_CACHE_FILE = os.path.join('..', 'cache', 'api_responses', 'instrument_url_to_ticker_map.json')
+
+def get_instrument_by_url_cached(url):
+    os.makedirs(os.path.dirname(INSTRUMENT_URL_CACHE_FILE), exist_ok=True)
+    url_to_ticker_map = {}
+    if os.path.exists(INSTRUMENT_URL_CACHE_FILE):
+        try:
+            with open(INSTRUMENT_URL_CACHE_FILE, 'r') as f:
+                url_to_ticker_map = json.load(f)
+        except json.JSONDecodeError:
+            print(f"Warning: Could not decode JSON from {INSTRUMENT_URL_CACHE_FILE}. Starting fresh.")
+
+    if url in url_to_ticker_map:
+        return {'symbol': url_to_ticker_map[url]}
+    else:
+        instrument_data = r.get_instrument_by_url(url)
+        if instrument_data and 'symbol' in instrument_data:
+            ticker = instrument_data['symbol']
+            url_to_ticker_map[url] = ticker
+            with open(INSTRUMENT_URL_CACHE_FILE, 'w') as f:
+                json.dump(url_to_ticker_map, f, indent=2)
+            return {'symbol': ticker}
+        return None # Or handle error appropriately
 
 @cache_robinhood_response
 def get_fundamentals(ticker):
@@ -311,7 +335,7 @@ def get_data_for_account(account_name, force_refresh=False):
                 if not pos or float(pos.get('quantity', 0)) == 0:
                     continue
 
-                instrument_data = get_instrument_by_url(pos['instrument'])
+                instrument_data = get_instrument_by_url_cached(pos['instrument'])
                 ticker = instrument_data['symbol']
                 fundamentals = get_fundamentals(ticker)[0]
                 latest_price_str = get_latest_price(ticker)[0]
@@ -523,11 +547,10 @@ def get_orders(account_name):
         stock_orders = get_all_stock_orders(account_number, start_date=start_date_str)
         for order in stock_orders:
             order['ticker'] = get_instrument_by_url(order['instrument'])['symbol']
-            print (order['ticker'])
 
         option_orders = get_all_option_orders(account_number, start_date=start_date_str)
-        # for order in option_orders:
-        #     order['ticker'] = order['chain_symbol']
+        for order in option_orders:
+            order['ticker'] = order['chain_symbol']
 
         all_orders = stock_orders + option_orders
 
