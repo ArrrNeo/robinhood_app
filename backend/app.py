@@ -545,10 +545,18 @@ def get_orders(account_name):
         end_date_str = request.args.get('end_date')
 
         stock_orders = get_all_stock_orders(account_number, start_date=start_date_str)
+        # with open('stock_orders_' + account_number + '.json', 'w') as f:
+        #     json.dump(stock_orders, f, indent=4)
+
         for order in stock_orders:
-            order['ticker'] = get_instrument_by_url(order['instrument'])['symbol']
+            if order['state'] == 'filled':
+                order['ticker'] = get_instrument_by_url(order['instrument'])['symbol']
+                order['net_amount'] = order['executed_notional']['amount']
 
         option_orders = get_all_option_orders(account_number, start_date=start_date_str)
+        # with open('option_orders_' + account_number + '.json', 'w') as f:
+        #     json.dump(option_orders, f, indent=4)
+
         for order in option_orders:
             order['ticker'] = order['chain_symbol']
 
@@ -598,8 +606,6 @@ def get_orders(account_name):
                 filtered_all_orders.append(order)
                 continue
 
-        with open('all_orders_' + account_number + '.json', 'w') as f:
-            json.dump(all_orders, f, indent=4)
         return jsonify(all_orders)
 
     except Exception as e:
