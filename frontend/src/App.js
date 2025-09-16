@@ -132,6 +132,7 @@ function App() {
         one_month_change: { label: '1M %', visible: false },
         three_month_change: { label: '3M %', visible: false },
         one_year_change: { label: '1Y %', visible: false },
+        yearly_revenue_change: { label: 'Y Rev %', visible: false },
         notes: { label: 'Notes', visible: true },
     };
 
@@ -358,6 +359,7 @@ function App() {
             one_month_change: <td className="p-4 font-mono"><PctIndicator value={pos.one_month_change} /></td>,
             three_month_change: <td className="p-4 font-mono"><PctIndicator value={pos.three_month_change} /></td>,
             one_year_change: <td className="p-4 font-mono"><PctIndicator value={pos.one_year_change} /></td>,
+            yearly_revenue_change: <td className="p-4 font-mono"><PctIndicator value={pos.yearly_revenue_change} /></td>,
             notes: <td className="p-4 font-mono"><EditableNoteCell ticker={pos.ticker} initialNote={pos.note} onSave={handleSaveNote} /></td>
         };
 

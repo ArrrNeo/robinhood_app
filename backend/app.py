@@ -1,16 +1,17 @@
 import os
-import sys
+import pytz
 import json
 import pprint
 import traceback
-import pandas as pd
-import yfinance as yf
+import yfinance
 from collections import defaultdict
 from flask_cors import CORS
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request
 import robin_stocks.robinhood as r
 from cache_utils import cache_robinhood_response
+from datetime import datetime, timedelta, time
+
 
 # order_considered_for_earned_premium_new_logic = []
 
@@ -112,7 +113,7 @@ def get_price_change_percentage(ticker, days_ago):
     """Uses yfinance to get the percentage change over a period."""
     try:
         ticker=ticker.replace('.', '-')
-        stock = yf.Ticker(ticker)
+        stock = yfinance.Ticker(ticker)
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days_ago)
         hist = stock.history(start=start_date, end=end_date)
@@ -125,6 +126,23 @@ def get_price_change_percentage(ticker, days_ago):
     except Exception as e:
         print(f"yfinance failed for {ticker} over {days_ago} days: {e}")
         return 0.0
+
+def get_revenue_change_percent(symbol, type="yearly"):
+    try:
+        ticker = yfinance.Ticker(symbol)
+        if type == "yearly":
+            statement = ticker.financials
+        elif type == "quarterly":
+            statement = ticker.quarterly_income_stmt
+        this=statement.loc['Total Revenue'].iloc[0]
+        prev=statement.loc['Total Revenue'].iloc[1]
+        revenue_change = ((this-prev) * 100 / prev)
+        print ('symbol: ', symbol, ' type: ', type, ' revenue_change: ', revenue_change)
+        return revenue_change
+    except:
+        revenue_change = 0
+        print ('symbol: ', symbol, ' type: ', type, ' revenue_change: ', revenue_change)
+        return 0
 
 def is_order_eligible_for_premium(order: dict):
     """
@@ -250,9 +268,6 @@ def parse_occ_symbol(occ_symbol_full):
         print(f"Error parsing OCC symbol '{occ_symbol_full}': {e}")
         return 'N/A', 'N/A', 0
 
-import pytz
-from datetime import datetime, timedelta, time
-
 def is_market_hours(now=None):
     """Checks if the current time is within US stock market hours."""
     if now is None:
@@ -373,6 +388,7 @@ def get_data_for_account(account_name, force_refresh=False):
                     "one_month_change": get_price_change_percentage(ticker, 30),
                     "three_month_change": get_price_change_percentage(ticker, 90),
                     "one_year_change": get_price_change_percentage(ticker, 365),
+                    "yearly_revenue_change": get_revenue_change_percent(ticker, type="yearly"),
                 })
 
         # 2. then, Fetch and process options
@@ -422,6 +438,7 @@ def get_data_for_account(account_name, force_refresh=False):
                     "one_month_change": 0,
                     "three_month_change": 0,
                     "one_year_change": 0,
+                    "yearly_revenue_change": get_revenue_change_percent(ticker, type="yearly"),
                 })
 
         # Add cash as a position
@@ -441,7 +458,8 @@ def get_data_for_account(account_name, force_refresh=False):
             "one_week_change": 0,
             "one_month_change": 0,
             "three_month_change": 0,
-            "one_year_change": 0
+            "one_year_change": 0,
+            "yearly_revenue_change": 0,
         })
 
         if float(portfolio['adjusted_portfolio_equity_previous_close']) == 0:
