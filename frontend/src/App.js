@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import './index.css';
 import OrdersPage from './Orders';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, horizontalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 // --- Helper Components ---
 
@@ -30,10 +33,10 @@ const MetricCardSkeleton = () => (
     </div>
 );
 
-const TableRowSkeleton = ({ columns }) => (
+const TableRowSkeleton = ({ columns, columnOrder }) => (
     <tr className="border-b border-gray-700">
-        {Object.values(columns).map((col, i) => (
-            col.visible ? <td key={i} className="p-4"><div className="h-5 bg-gray-600 rounded"></div></td> : null
+        {columnOrder.map(key => (
+            columns[key].visible ? <td key={key} className="p-4"><div className="h-5 bg-gray-600 rounded"></div></td> : null
         ))}
     </tr>
 );
@@ -103,7 +106,22 @@ const EditableNoteCell = ({ ticker, initialNote, onSave }) => (
 const EditableIndustryCell = ({ ticker, initialIndustry, onSave }) => (
     <EditableTextCell ticker={ticker} initialValue={initialIndustry} onSave={onSave} fieldName="comment" placeholder="Add comment..." />
 );
-    
+
+const DraggableHeaderCell = ({ id, children, ...props }) => {
+    const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        cursor: 'move',
+    };
+    return (
+        <th ref={setNodeRef} style={style} {...props}>
+            <div {...attributes} {...listeners}>
+                {children}
+            </div>
+        </th>
+    );
+};
 
 
 // --- Main App Component ---
@@ -160,6 +178,31 @@ function App() {
             return initialColumns;
         }
     });
+
+    const [columnOrder, setColumnOrder] = useState(() => {
+        try {
+            const savedOrder = localStorage.getItem('portfolio-column-order');
+            const initialOrder = Object.keys(initialColumns);
+
+            if (savedOrder) {
+                const parsedOrder = JSON.parse(savedOrder);
+                if (
+                    parsedOrder.length === initialOrder.length &&
+                    parsedOrder.every(key => initialOrder.includes(key))
+                ) {
+                    return parsedOrder;
+                }
+            }
+            return initialOrder;
+        } catch (e) {
+            return Object.keys(initialColumns);
+        }
+    });
+
+    useEffect(() => {
+        localStorage.setItem('portfolio-column-order', JSON.stringify(columnOrder));
+    }, [columnOrder]);
+
 
     const sortedPositions = useMemo(() => {
         if (!portfolioData || !portfolioData.positions) return [];
@@ -377,11 +420,30 @@ function App() {
 
         return (
             <tr key={isOption ? `${pos.ticker}-${pos.expiry}-${pos.strike}-${pos.option_type}` : pos.ticker} className="border-b border-gray-700 last:border-b-0 hover:bg-gray-700/50 transition-colors">
-                {Object.entries(columns).map(([key, { visible }]) =>
-                    visible ? React.cloneElement(cells[key], { key }) : null
-                )}
+                {columnOrder.map(key => {
+                    const { visible } = columns[key];
+                    return visible ? React.cloneElement(cells[key], { key }) : null
+                })}
             </tr>
         );
+    };
+
+    const sensors = useSensors(
+        useSensor(PointerSensor),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    );
+
+    const handleDragEnd = (event) => {
+        const { active, over } = event;
+        if (active.id !== over.id) {
+            setColumnOrder((items) => {
+                const oldIndex = items.indexOf(active.id);
+                const newIndex = items.indexOf(over.id);
+                return arrayMove(items, oldIndex, newIndex);
+            });
+        }
     };
 
     return (
@@ -503,20 +565,25 @@ function App() {
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left min-w-[1200px]">
                                     <thead className="bg-gray-800 border-b border-gray-700">
-                                        <tr>
-                                            {Object.entries(columns).map(([key, { label, visible }]) =>
-                                                visible ? (
-                                                    <th key={key} className="p-4 text-sm font-semibold text-gray-400 tracking-wider cursor-pointer" onClick={() => requestSort(key)}>
-                                                        {label}
-                                                        {sortConfig.key === key && <SortIcon direction={sortConfig.direction} />}
-                                                    </th>
-                                                ) : null
-                                            )}
-                                        </tr>
+                                        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                                            <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
+                                                <tr>
+                                                    {columnOrder.map(key => {
+                                                        const { label, visible } = columns[key];
+                                                        return visible ? (
+                                                            <DraggableHeaderCell key={key} id={key} className="p-4 text-sm font-semibold text-gray-400 tracking-wider" onClick={() => requestSort(key)}>
+                                                                {label}
+                                                                {sortConfig.key === key && <SortIcon direction={sortConfig.direction} />}
+                                                            </DraggableHeaderCell>
+                                                        ) : null
+                                                    })}
+                                                </tr>
+                                            </SortableContext>
+                                        </DndContext>
                                     </thead>
                                     <tbody>
                                         {loading && !portfolioData ? (
-                                            Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} columns={columns} />)
+                                            Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} columns={columns} columnOrder={columnOrder} />)
                                         ) : sortedPositions.length > 0 ? (
                                             sortedPositions.map(renderPositionRow)
                                         ) : (
