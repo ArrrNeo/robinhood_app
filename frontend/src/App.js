@@ -62,39 +62,48 @@ const PctIndicator = ({ value }) => (
     </span>
 );
 
-const EditableNoteCell = ({ ticker, initialNote, onSave }) => {
-    const [note, setNote] = useState(initialNote);
+const EditableTextCell = ({ ticker, initialValue, onSave, fieldName, placeholder }) => {
+    const [value, setValue] = useState(initialValue);
     const textareaRef = useRef(null);
 
     useEffect(() => {
-        setNote(initialNote);
-    }, [initialNote]);
+        setValue(initialValue);
+    }, [initialValue]);
 
     useEffect(() => {
         if (textareaRef.current) {
             textareaRef.current.style.height = 'auto';
             textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
         }
-    }, [note]);
+    }, [value]);
 
     const handleBlur = () => {
-        if (note !== initialNote) {
-            onSave(ticker, note);
+        if (value !== initialValue) {
+            onSave(ticker, fieldName, value);
         }
     };
 
     return (
         <textarea
             ref={textareaRef}
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
             onBlur={handleBlur}
             className="w-full bg-transparent resize-none border-none focus:ring-0 focus:outline-none p-0 m-0"
-            placeholder="Add a note..."
+            placeholder={placeholder}
             rows="1"
         />
     );
 };
+
+const EditableNoteCell = ({ ticker, initialNote, onSave }) => (
+    <EditableTextCell ticker={ticker} initialValue={initialNote} onSave={onSave} fieldName="note" placeholder="Add a note..." />
+);
+
+const EditableIndustryCell = ({ ticker, initialIndustry, onSave }) => (
+    <EditableTextCell ticker={ticker} initialValue={initialIndustry} onSave={onSave} fieldName="comment" placeholder="Add comment..." />
+);
+    
 
 
 // --- Main App Component ---
@@ -134,6 +143,7 @@ function App() {
         one_year_change: { label: '1Y %', visible: false },
         yearly_revenue_change: { label: 'Y Rev %', visible: false },
         notes: { label: 'Notes', visible: true },
+        comment: { label: 'comment', visible: false },
     };
 
     const [columns, setColumns] = useState(() => {
@@ -230,27 +240,27 @@ function App() {
         }
     }, [selectedAccount]);
 
-    const handleSaveNote = useCallback(async (ticker, note) => {
+    const handleSaveCell = useCallback(async (ticker, fieldName, value) => {
         if (!selectedAccount) return;
         try {
             const response = await fetch(`http://192.168.4.42:5001/api/notes/${selectedAccount}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ticker, note }),
+                body: JSON.stringify({ ticker, [fieldName]: value }),
             });
-            if (!response.ok) throw new Error('Failed to save note.');
+            if (!response.ok) throw new Error(`Failed to save ${fieldName}.`);
 
             // Optimistically update local state
             setPortfolioData(prevData => {
                 if (!prevData) return null;
                 const updatedPositions = prevData.positions.map(p =>
-                    p.ticker === ticker ? { ...p, note } : p
+                    p.ticker === ticker ? { ...p, [fieldName]: value } : p
                 );
                 return { ...prevData, positions: updatedPositions };
             });
 
         } catch (e) {
-            console.error("Failed to save note:", e);
+            console.error(`Failed to save ${fieldName}:`, e);
             // Optionally show an error to the user
         }
     }, [selectedAccount]);
@@ -306,7 +316,8 @@ function App() {
 
             const positionsWithNotes = portfolioResult.positions.map(pos => ({
                 ...pos,
-                note: notesResult[pos.ticker] || ''
+                note: notesResult[pos.ticker]?.note || '',
+                comment: notesResult[pos.ticker]?.comment || ''
             }));
 
             const finalData = { ...portfolioResult, positions: positionsWithNotes };
@@ -360,7 +371,8 @@ function App() {
             three_month_change: <td className="p-4 font-mono"><PctIndicator value={pos.three_month_change} /></td>,
             one_year_change: <td className="p-4 font-mono"><PctIndicator value={pos.one_year_change} /></td>,
             yearly_revenue_change: <td className="p-4 font-mono"><PctIndicator value={pos.yearly_revenue_change} /></td>,
-            notes: <td className="p-4 font-mono"><EditableNoteCell ticker={pos.ticker} initialNote={pos.note} onSave={handleSaveNote} /></td>
+            notes: <td className="p-4 font-mono"><EditableNoteCell ticker={pos.ticker} initialNote={pos.note} onSave={handleSaveCell} /></td>,
+            comment: <td className="p-4 font-mono"><EditableIndustryCell ticker={pos.ticker} initialIndustry={pos.comment} onSave={handleSaveCell} /></td>
         };
 
         return (

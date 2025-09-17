@@ -536,15 +536,28 @@ def get_notes(account_name):
 def update_note(account_name):
     """API endpoint to update a note for a specific ticker in an account."""
     data = request.get_json()
-    if not data or 'ticker' not in data or 'note' not in data:
+    if not data or 'ticker' not in data or not ('note' in data or 'comment' in data):
         return jsonify({"error": "Invalid payload"}), 400
     notes_dir = os.path.join('..', 'cache', account_name)
     os.makedirs(notes_dir, exist_ok=True)
     notes_path = os.path.join(notes_dir, 'notes.json')
     notes = {}
     if os.path.exists(notes_path):
-        with open(notes_path, 'r') as f: notes = json.load(f)
-    notes[data['ticker']] = data['note']
+        with open(notes_path, 'r') as f:
+            try:
+                notes = json.load(f)
+            except json.JSONDecodeError:
+                print(f"Warning: Could not decode JSON from {notes_path}. Starting fresh.")
+
+    ticker = data['ticker']
+    if ticker not in notes:
+        notes[ticker] = {"note": "", "comment": ""}
+
+    if 'note' in data:
+        notes[ticker]['note'] = data['note']
+    if 'comment' in data:
+        notes[ticker]['comment'] = data['comment']
+
     with open(notes_path, 'w') as f:
         json.dump(notes, f, indent=2)
     return jsonify({"success": True, **data})
