@@ -41,6 +41,36 @@ except Exception as e:
     print(f"CRITICAL: Robinhood login failed on startup. {e}")
     # The app will still run, but API calls will fail.
 
+# Global dictionary to cache Ticker objects
+ticker_cache = {}
+def get_yfinance_ticker(symbol, refresh_interval_minutes=5):
+    """
+    Checks the cache for a Ticker object. If it's stale or not found,
+    it creates/updates and caches it with a new timestamp.
+    """
+    # Replace invalid characters in the symbol
+    symbol = symbol.replace('.', '-')
+    # Check if the symbol is in the cache
+    if symbol in ticker_cache:
+        # Check if the cached data is still fresh
+        last_call_time = ticker_cache[symbol]['timestamp']
+        time_diff = datetime.now() - last_call_time
+        if time_diff.total_seconds() < refresh_interval_minutes * 60:
+            # Data is fresh, return the cached Ticker object
+            return ticker_cache[symbol]['ticker']
+    # If the ticker is not in the cache or is stale, create a new Ticker object
+    # and update the cache with the current timestamp
+    try:
+        ticker = yfinance.Ticker(symbol)
+        ticker_cache[symbol] = {
+            'ticker': ticker,
+            'timestamp': datetime.now()
+        }
+        return ticker
+    except Exception as e:
+        print(f"Failed to create yfinance Ticker object for {ticker}: {e}")
+        return None
+
 @cache_robinhood_response
 def get_all_option_orders(account_number, start_date=None):
     return r.orders.get_all_option_orders(account_number=account_number, start_date=start_date)
@@ -109,14 +139,13 @@ def get_option_market_data_by_id(option_id):
 def get_all_stock_orders(account_number, start_date=None):
     return r.orders.get_all_stock_orders(account_number=account_number, start_date=start_date)
 
-def get_price_change_percentage(ticker, days_ago):
-    """Uses yfinance to get the percentage change over a period."""
+def get_price_change_percentage(symbol, days_ago):
+    """ Uses yfinance to get the percentage change over a period, with caching. """
     try:
-        ticker=ticker.replace('.', '-')
-        stock = yfinance.Ticker(ticker)
+        ticker = get_yfinance_ticker(symbol)
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days_ago)
-        hist = stock.history(start=start_date, end=end_date)
+        hist = ticker.history(start=start_date, end=end_date)
         if hist.empty or len(hist) < 2:
             return 0.0
         old_price = hist['Close'].iloc[0]
@@ -124,24 +153,30 @@ def get_price_change_percentage(ticker, days_ago):
         if old_price == 0: return 0.0
         return ((new_price - old_price) / old_price) * 100
     except Exception as e:
-        print(f"yfinance failed for {ticker} over {days_ago} days: {e}")
+        print(f"yfinance failed for {symbol} over {days_ago} days: {e}")
         return 0.0
 
 def get_revenue_change_percent(symbol, type="yearly"):
+    """ Gets revenue change with caching. """
     try:
-        ticker = yfinance.Ticker(symbol)
+        ticker = get_yfinance_ticker(symbol)
         if type == "yearly":
             statement = ticker.financials
         elif type == "quarterly":
             statement = ticker.quarterly_income_stmt
         this=statement.loc['Total Revenue'].iloc[0]
         prev=statement.loc['Total Revenue'].iloc[1]
-        revenue_change = ((this-prev) * 100 / prev)
+        if prev == 0:
+            revenue_change = 0
+            print ('symbol: ', symbol, ' type: ', type, ' revenue_change: ', revenue_change)
+            return revenue_change
+
+        revenue_change = ((this - prev) * 100 / prev)
         print ('symbol: ', symbol, ' type: ', type, ' revenue_change: ', revenue_change)
         return revenue_change
-    except:
+    except Exception as e:
         revenue_change = 0
-        print ('symbol: ', symbol, ' type: ', type, ' revenue_change: ', revenue_change)
+        print ('symbol: ', symbol, ' type: ', type, ' revenue_change: ', revenue_change, f' Error: {e}')
         return 0
 
 def is_order_eligible_for_premium(order: dict):
