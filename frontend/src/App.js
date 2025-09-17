@@ -119,7 +119,6 @@ function App() {
         unrealizedPnl: { label: 'P/L', visible: true },
         returnPct: { label: '% Return', visible: true },
         intraday_percent_change: { label: 'Day %', visible: false },
-        earnedPremium: { label: 'Earned Premium', visible: true },
         portfolio_percent: { label: 'Portfolio %', visible: false },
         side: { label: 'Side', visible: false },
         type: { label: 'Type', visible: true },
@@ -418,9 +417,9 @@ function App() {
                             <p className="text-gray-400">Last updated: {portfolioData && portfolioData.timestamp ? new Date(portfolioData.timestamp).toLocaleString() : '...'}</p>
                         </header>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6 mb-8">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
                             {loading && !portfolioData ? (
-                                [...Array(6)].map((_, i) => <MetricCardSkeleton key={i} />)
+                                [...Array(5)].map((_, i) => <MetricCardSkeleton key={i} />)
                             ) : portfolioData ? (
                                 <>
                                     <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
@@ -443,12 +442,6 @@ function App() {
                                         <h3 className="text-gray-400 text-sm mb-2">Day's P/L %</h3>
                                         <p className={`text-3xl font-semibold ${portfolioData.summary.changeTodayPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                             {formatPercent(portfolioData.summary.changeTodayPct)}
-                                        </p>
-                                    </div>
-                                    <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
-                                        <h3 className="text-gray-400 text-sm mb-2">Earned Premium</h3>
-                                        <p className="text-3xl font-semibold text-green-400">
-                                            {formatCurrency(portfolioData.summary.earnedPremium)}
                                         </p>
                                     </div>
                                     <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
