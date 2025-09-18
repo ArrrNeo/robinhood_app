@@ -424,6 +424,8 @@ def get_data_for_account(account_name, force_refresh=False):
                     "three_month_change": get_price_change_percentage(ticker, 90),
                     "one_year_change": get_price_change_percentage(ticker, 365),
                     "yearly_revenue_change": get_revenue_change_percent(ticker, type="yearly"),
+                    "sector": fundamentals.get('sector'),
+                    "industry": fundamentals.get('industry'),
                 })
 
         # 2. then, Fetch and process options
@@ -450,6 +452,7 @@ def get_data_for_account(account_name, force_refresh=False):
                 total_pnl += unrealized_pnl
 
                 expiry, option_type, strike = parse_occ_symbol(market_data.get('occ_symbol'))
+                fundamentals = get_fundamentals(ticker)[0]
 
                 all_positions_data.append({
                      "type": "option",
@@ -474,6 +477,8 @@ def get_data_for_account(account_name, force_refresh=False):
                     "three_month_change": 0,
                     "one_year_change": 0,
                     "yearly_revenue_change": get_revenue_change_percent(ticker, type="yearly"),
+                    "sector": fundamentals.get('sector'),
+                    "industry": fundamentals.get('industry'),
                 })
 
         # Add cash as a position

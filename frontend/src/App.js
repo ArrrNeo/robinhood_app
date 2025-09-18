@@ -162,6 +162,8 @@ function App() {
         yearly_revenue_change: { label: 'Y Rev %', visible: false },
         notes: { label: 'Notes', visible: true },
         comment: { label: 'comment', visible: false },
+        industry: { label: 'Industry', visible: false },
+        sector: { label: 'Sector', visible: false },
     };
 
     const [columns, setColumns] = useState(() => {
@@ -415,7 +417,9 @@ function App() {
             one_year_change: <td className="p-4 font-mono"><PctIndicator value={pos.one_year_change} /></td>,
             yearly_revenue_change: <td className="p-4 font-mono"><PctIndicator value={pos.yearly_revenue_change} /></td>,
             notes: <td className="p-4 font-mono"><EditableNoteCell ticker={pos.ticker} initialNote={pos.note} onSave={handleSaveCell} /></td>,
-            comment: <td className="p-4 font-mono"><EditableIndustryCell ticker={pos.ticker} initialIndustry={pos.comment} onSave={handleSaveCell} /></td>
+            comment: <td className="p-4 font-mono"><EditableIndustryCell ticker={pos.ticker} initialIndustry={pos.comment} onSave={handleSaveCell} /></td>,
+            industry: <td className="p-4 text-gray-300">{pos.industry}</td>,
+            sector: <td className="p-4 text-gray-300">{pos.sector}</td>
         };
 
         return (
