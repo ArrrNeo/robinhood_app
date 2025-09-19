@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import './index.css';
 import OrdersPage from './Orders';
+import AllAccounts from './AllAccounts';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -134,7 +135,7 @@ function App() {
     const [error, setError] = useState(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [sortConfig, setSortConfig] = useState({ key: 'marketValue', direction: 'descending' });
-    const [currentPage, setCurrentPage] = useState('portfolio'); // 'portfolio' or 'orders'
+    const [currentPage, setCurrentPage] = useState('portfolio'); // 'portfolio', 'orders', or 'all'
     const settingsRef = useRef(null);
 
     const initialColumns = {
@@ -457,38 +458,51 @@ function App() {
                 <div className="mb-8">
                     <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Accounts</h2>
                     <nav className="flex flex-col space-y-2">
+                        <button
+                            onClick={() => setCurrentPage('all')}
+                            className={`text-left px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors w-full ${currentPage === 'all' ? 'bg-gray-700 font-semibold text-white' : ''}`}
+                        >
+                            All
+                        </button>
                         {accounts.map(acc => (
                             <button
                                 key={acc}
-                                onClick={() => setSelectedAccount(acc)}
-                                className={`text-left px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors w-full ${selectedAccount === acc ? 'bg-gray-700 font-semibold text-white' : ''}`}
+                                onClick={() => {
+                                    setSelectedAccount(acc);
+                                    setCurrentPage('portfolio');
+                                }}
+                                className={`text-left px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors w-full ${selectedAccount === acc && currentPage === 'portfolio' ? 'bg-gray-700 font-semibold text-white' : ''}`}
                             >
                                 {acc.replace(/_/g, ' ')}
                             </button>
                         ))}
                     </nav>
                 </div>
-                <div>
-                    <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Views</h2>
-                    <nav className="flex flex-col space-y-2">
-                        <button
-                            onClick={() => setCurrentPage('portfolio')}
-                            className={`text-left px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors w-full ${currentPage === 'portfolio' ? 'bg-gray-700 font-semibold text-white' : ''}`}
-                        >
-                            Portfolio
-                        </button>
-                        <button
-                            onClick={() => setCurrentPage('orders')}
-                            className={`text-left px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors w-full ${currentPage === 'orders' ? 'bg-gray-700 font-semibold text-white' : ''}`}
-                        >
-                            Orders
-                        </button>
-                    </nav>
-                </div>
+                {currentPage !== 'all' && selectedAccount && (
+                    <div>
+                        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Views</h2>
+                        <nav className="flex flex-col space-y-2">
+                            <button
+                                onClick={() => setCurrentPage('portfolio')}
+                                className={`text-left px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors w-full ${currentPage === 'portfolio' ? 'bg-gray-700 font-semibold text-white' : ''}`}
+                            >
+                                Portfolio
+                            </button>
+                            <button
+                                onClick={() => setCurrentPage('orders')}
+                                className={`text-left px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors w-full ${currentPage === 'orders' ? 'bg-gray-700 font-semibold text-white' : ''}`}
+                            >
+                                Orders
+                            </button>
+                        </nav>
+                    </div>
+                )}
             </aside>
 
             <main className="flex-1 p-8 overflow-auto">
-                {currentPage === 'portfolio' ? (
+                {currentPage === 'all' ? (
+                    <AllAccounts />
+                ) : currentPage === 'portfolio' ? (
                     <>
                         {error && <div className="bg-red-800/50 text-red-200 p-4 rounded-lg mb-6 border border-red-700">{error}</div>}
 
