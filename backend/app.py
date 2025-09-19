@@ -570,7 +570,7 @@ def get_accounts():
 @app.route('/api/notes/<string:account_name>', methods=['GET'])
 def get_notes(account_name):
     """API endpoint to get notes for a specific account."""
-    notes_path = os.path.join('..', 'cache', account_name, 'notes.json')
+    notes_path = os.path.join('..', 'cache', 'global_notes.json')
     if os.path.exists(notes_path):
         with open(notes_path, 'r') as f:
             return jsonify(json.load(f))
@@ -582,9 +582,9 @@ def update_note(account_name):
     data = request.get_json()
     if not data or 'ticker' not in data or not ('note' in data or 'comment' in data):
         return jsonify({"error": "Invalid payload"}), 400
-    notes_dir = os.path.join('..', 'cache', account_name)
+    notes_dir = os.path.join('..', 'cache')
     os.makedirs(notes_dir, exist_ok=True)
-    notes_path = os.path.join(notes_dir, 'notes.json')
+    notes_path = os.path.join(notes_dir, 'global_notes.json')
     notes = {}
     if os.path.exists(notes_path):
         with open(notes_path, 'r') as f:
