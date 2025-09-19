@@ -92,7 +92,7 @@ const EditableTextCell = ({ ticker, initialValue, onSave, fieldName, placeholder
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onBlur={handleBlur}
-            className="w-full bg-transparent resize-none border-none focus:ring-0 focus:outline-none p-0 m-0"
+            className="w-full bg-transparent resize-none border-none focus:ring-0 focus:outline-none p-0 m-0 align-middle"
             placeholder={placeholder}
             rows="1"
         />
