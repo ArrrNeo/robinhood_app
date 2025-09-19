@@ -13,13 +13,16 @@ from cache_utils import cache_robinhood_response
 from datetime import datetime, timedelta, time
 
 
-# order_considered_for_earned_premium_new_logic = []
+# --- Load Configuration ---
+with open('config.json', 'r') as f:
+    config = json.load(f)
+
+with open('market-config.json', 'r') as f:
+    market_config = json.load(f)
 
 # --- Flask App Initialization ---
 app = Flask(__name__)
-# Allow requests from both localhost (for local dev) and your specific network IP
-origins = ["http://localhost:3000", "http://192.168.4.42:3000"]
-CORS(app, resources={r"/api/*": {"origins": origins}})
+CORS(app, resources={r"/api/*": {"origins": config['cors']['origins']}})
 
 pp = pprint.PrettyPrinter(indent=4)
 
@@ -43,7 +46,9 @@ except Exception as e:
 
 # Global dictionary to cache Ticker objects
 ticker_cache = {}
-def get_yfinance_ticker(symbol, refresh_interval_minutes=5):
+def get_yfinance_ticker(symbol, refresh_interval_minutes=None):
+    if refresh_interval_minutes is None:
+        refresh_interval_minutes = config['cache']['yfinance_refresh_interval_minutes']
     """
     Checks the cache for a Ticker object. If it's stale or not found,
     it creates/updates and caches it with a new timestamp.
@@ -91,7 +96,7 @@ def get_instrument_by_url(url):
     return r.get_instrument_by_url(url)
 
 # --- Caching for get_instrument_by_url ---
-INSTRUMENT_URL_CACHE_FILE = os.path.join('..', 'cache', 'api_responses', 'instrument_url_to_ticker_map.json')
+INSTRUMENT_URL_CACHE_FILE = config['paths']['instrument_cache_file']
 
 def get_instrument_by_url_cached(url):
     os.makedirs(os.path.dirname(INSTRUMENT_URL_CACHE_FILE), exist_ok=True)
@@ -227,7 +232,7 @@ def calculate_theta_premium_for_account(account_number, account_name):
     Calculates the net premium from all historical filled option orders
     and groups it by ticker, using a cache to avoid reprocessing orders.
     """
-    cache_dir = os.path.join('..', 'cache', account_name)
+    cache_dir = os.path.join(config['cache']['cache_directory'], account_name)
     os.makedirs(cache_dir, exist_ok=True)
     cache_file = os.path.join(cache_dir, 'earned_premium.json')
 
@@ -308,18 +313,21 @@ def is_market_hours(now=None):
     if now is None:
         now = datetime.now(pytz.utc)
 
-    eastern = pytz.timezone('US/Eastern')
+    eastern = pytz.timezone(market_config['market_hours']['timezone'])
     now_eastern = now.astimezone(eastern)
 
-    # Market hours: 9:30 AM to 4:00 PM
-    market_open = time(9, 30)
-    market_close = time(16, 0)
+    # Parse market hours from config
+    open_time_str = market_config['market_hours']['open_time']
+    close_time_str = market_config['market_hours']['close_time']
 
-    # Check if it's a weekday and within market hours
-    is_weekday = now_eastern.weekday() < 5  # Monday=0, Sunday=6
+    market_open = time(*map(int, open_time_str.split(':')))
+    market_close = time(*map(int, close_time_str.split(':')))
+
+    # Check if it's a trading day and within market hours
+    is_trading_day = now_eastern.weekday() in market_config['market_hours']['trading_days']
     is_market_time = market_open <= now_eastern.time() <= market_close
 
-    return is_weekday and is_market_time
+    return is_trading_day and is_market_time
 
 def get_data_for_account(account_name, force_refresh=False):
     """
@@ -328,17 +336,17 @@ def get_data_for_account(account_name, force_refresh=False):
     It uses a cache to avoid fetching data too frequently, with different
     durations for market vs. off-market hours.
     """
-    cache_dir = os.path.join('..', 'cache', account_name)
+    cache_dir = os.path.join(config['cache']['cache_directory'], account_name)
     os.makedirs(cache_dir, exist_ok=True)
     portfolio_cache_file = os.path.join(cache_dir, 'portfolio_data.json')
 
     # Determine cache duration based on market hours
     if is_market_hours():
-        CACHE_DURATION_SECONDS = 300  # 5 minutes
-        print("Market is open. Using 5-minute cache.")
+        CACHE_DURATION_SECONDS = config['cache']['market_hours_duration_seconds']
+        print(f"Market is open. Using {CACHE_DURATION_SECONDS//60}-minute cache.")
     else:
-        CACHE_DURATION_SECONDS = 3600  # 60 minutes
-        print("Market is closed. Using 60-minute cache.")
+        CACHE_DURATION_SECONDS = config['cache']['after_hours_duration_seconds']
+        print(f"Market is closed. Using {CACHE_DURATION_SECONDS//60}-minute cache.")
 
     # --- Check for cached data first ---
     if not force_refresh and os.path.exists(portfolio_cache_file):
@@ -570,7 +578,7 @@ def get_accounts():
 @app.route('/api/notes/<string:account_name>', methods=['GET'])
 def get_notes(account_name):
     """API endpoint to get notes for a specific account."""
-    notes_path = os.path.join('..', 'cache', 'global_notes.json')
+    notes_path = config['paths']['notes_file']
     if os.path.exists(notes_path):
         with open(notes_path, 'r') as f:
             return jsonify(json.load(f))
@@ -582,7 +590,7 @@ def update_note(account_name):
     data = request.get_json()
     if not data or 'ticker' not in data or not ('note' in data or 'comment' in data):
         return jsonify({"error": "Invalid payload"}), 400
-    notes_dir = os.path.join('..', 'cache')
+    notes_dir = os.path.dirname(config['paths']['notes_file'])
     os.makedirs(notes_dir, exist_ok=True)
     notes_path = os.path.join(notes_dir, 'global_notes.json')
     notes = {}
@@ -690,7 +698,9 @@ def get_orders(account_name):
 
 # --- Run the App ---
 if __name__ == '__main__':
-    # Use port 5001 to avoid conflict with React's default 3000
-    # Host '0.0.0.0' makes it accessible on your local network
-    # app.run(debug=True, port=5001, host='0.0.0.0')
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    # Load server configuration from config
+    app.run(
+        debug=config['server']['debug'],
+        host=config['server']['host'],
+        port=config['server']['port']
+    )

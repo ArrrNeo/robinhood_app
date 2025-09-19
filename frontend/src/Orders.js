@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import config from './config.json';
 
 const SortIcon = ({ direction }) => (
     <svg className="w-4 h-4 inline-block ml-1 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -32,7 +33,7 @@ const OrdersPage = ({ selectedAccount }) => {
             setLoading(true);
             setError(null);
 
-            let url = `http://192.168.4.42:5001/api/orders/${selectedAccount}`;
+            let url = `${config.api.base_url}${config.api.endpoints.orders}/${selectedAccount}`;
             const params = new URLSearchParams();
 
             if (dateRange !== 'all') {

@@ -1,0 +1,16 @@
+{
+  "market_hours": {
+    "timezone": "US/Eastern",
+    "open_time": "09:30",
+    "close_time": "16:00",
+    "trading_days": [0, 1, 2, 3, 4]
+  },
+  "theta_strategy": {
+    "eligible_order_states": ["filled"],
+    "premium_calculation": {
+      "include_sto": true,
+      "include_btc": true,
+      "exclude_debit_spreads": true
+    }
+  }
+}

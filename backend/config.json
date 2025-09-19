@@ -1,0 +1,20 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 5001,
+    "debug": true
+  },
+  "cors": {
+    "origins": ["http://localhost:3000", "http://192.168.4.42:3000", "http://100.68.151.59:3000"]
+  },
+  "cache": {
+    "market_hours_duration_seconds": 300,
+    "after_hours_duration_seconds": 3600,
+    "yfinance_refresh_interval_minutes": 5,
+    "cache_directory": "../cache"
+  },
+  "paths": {
+    "instrument_cache_file": "../cache/api_responses/instrument_url_to_ticker_map.json",
+    "notes_file": "../cache/global_notes.json"
+  }
+}

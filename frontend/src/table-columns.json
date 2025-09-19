@@ -1,0 +1,39 @@
+{
+  "default_columns": {
+    "ticker": { "label": "Ticker", "visible": true },
+    "name": { "label": "Name", "visible": false },
+    "marketValue": { "label": "Market Value", "visible": true },
+    "quantity": { "label": "Quantity", "visible": true },
+    "avgCost": { "label": "Avg Cost", "visible": true },
+    "unrealizedPnl": { "label": "P/L", "visible": true },
+    "returnPct": { "label": "% Return", "visible": true },
+    "intraday_percent_change": { "label": "Day %", "visible": false },
+    "portfolio_percent": { "label": "Portfolio %", "visible": false },
+    "side": { "label": "Side", "visible": false },
+    "type": { "label": "Type", "visible": true },
+    "strike": { "label": "Strike", "visible": true },
+    "expiry": { "label": "Expiry", "visible": true },
+    "pe_ratio": { "label": "P/E Ratio", "visible": false },
+    "high_52_weeks": { "label": "52wk High", "visible": false },
+    "low_52_weeks": { "label": "52wk Low", "visible": false },
+    "position_52_week": { "label": "52wk Pos %", "visible": false },
+    "one_week_change": { "label": "1W %", "visible": false },
+    "one_month_change": { "label": "1M %", "visible": false },
+    "three_month_change": { "label": "3M %", "visible": false },
+    "one_year_change": { "label": "1Y %", "visible": false },
+    "yearly_revenue_change": { "label": "Y Rev %", "visible": false },
+    "notes": { "label": "Notes", "visible": true },
+    "comment": { "label": "comment", "visible": false },
+    "industry": { "label": "Industry", "visible": false },
+    "sector": { "label": "Sector", "visible": false }
+  },
+  "default_order": [
+    "ticker", "name", "marketValue", "quantity", "avgCost",
+    "unrealizedPnl", "returnPct", "intraday_percent_change",
+    "portfolio_percent", "side", "type", "strike", "expiry",
+    "pe_ratio", "high_52_weeks", "low_52_weeks", "position_52_week",
+    "one_week_change", "one_month_change", "three_month_change",
+    "one_year_change", "yearly_revenue_change", "notes", "comment",
+    "industry", "sector"
+  ]
+}

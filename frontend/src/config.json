@@ -1,0 +1,19 @@
+{
+  "api": {
+    "base_url": "http://192.168.4.42:5001",
+    "endpoints": {
+      "accounts": "/api/accounts",
+      "portfolio": "/api/portfolio",
+      "orders": "/api/orders",
+      "notes": "/api/notes"
+    }
+  },
+  "cache": {
+    "local_storage_keys": {
+      "columns": "portfolio-columns",
+      "column_order": "portfolio-column-order",
+      "selected_account": "selectedAccount",
+      "portfolio_data_prefix": "portfolio-data-"
+    }
+  }
+}

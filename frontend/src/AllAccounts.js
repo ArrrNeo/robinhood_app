@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import config from './config.json';
+import tableConfig from './table-columns.json';
 
 // --- Helper Components (copied from App.js) ---
 
@@ -136,38 +138,11 @@ function AllAccounts() {
     });
     const settingsRef = useRef(null);
 
-    const initialColumns = {
-        ticker: { label: 'Ticker', visible: true },
-        name: { label: 'Name', visible: false },
-        marketValue: { label: 'Market Value', visible: true },
-        quantity: { label: 'Quantity', visible: true },
-        avgCost: { label: 'Avg Cost', visible: true },
-        unrealizedPnl: { label: 'P/L', visible: true },
-        returnPct: { label: '% Return', visible: true },
-        intraday_percent_change: { label: 'Day %', visible: false },
-        portfolio_percent: { label: 'Portfolio %', visible: false },
-        side: { label: 'Side', visible: false },
-        type: { label: 'Type', visible: true },
-        strike: { label: 'Strike', visible: true },
-        expiry: { label: 'Expiry', visible: true },
-        pe_ratio: { label: 'P/E Ratio', visible: false },
-        high_52_weeks: { label: '52wk High', visible: false },
-        low_52_weeks: { label: '52wk Low', visible: false },
-        position_52_week: { label: '52wk Pos %', visible: false },
-        one_week_change: { label: '1W %', visible: false },
-        one_month_change: { label: '1M %', visible: false },
-        three_month_change: { label: '3M %', visible: false },
-        one_year_change: { label: '1Y %', visible: false },
-        yearly_revenue_change: { label: 'Y Rev %', visible: false },
-        notes: { label: 'Notes', visible: true },
-        comment: { label: 'comment', visible: false },
-        industry: { label: 'Industry', visible: false },
-        sector: { label: 'Sector', visible: false },
-    };
+    const initialColumns = tableConfig.default_columns;
 
     const [columns, setColumns] = useState(() => {
         try {
-            const saved = localStorage.getItem('portfolio-columns');
+            const saved = localStorage.getItem(config.cache.local_storage_keys.columns);
             const parsed = saved ? JSON.parse(saved) : initialColumns;
             for (const key in initialColumns) {
                 if (!parsed.hasOwnProperty(key)) {
@@ -182,8 +157,8 @@ function AllAccounts() {
 
     const [columnOrder, setColumnOrder] = useState(() => {
         try {
-            const savedOrder = localStorage.getItem('portfolio-column-order');
-            const initialOrder = Object.keys(initialColumns);
+            const savedOrder = localStorage.getItem(config.cache.local_storage_keys.column_order);
+            const initialOrder = tableConfig.default_order;
 
             if (savedOrder) {
                 const parsedOrder = JSON.parse(savedOrder);
@@ -196,7 +171,7 @@ function AllAccounts() {
             }
             return initialOrder;
         } catch (e) {
-            return Object.keys(initialColumns);
+            return tableConfig.default_order;
         }
     });
 
@@ -276,11 +251,11 @@ function AllAccounts() {
     };
 
     useEffect(() => {
-        localStorage.setItem('portfolio-columns', JSON.stringify(columns));
+        localStorage.setItem(config.cache.local_storage_keys.columns, JSON.stringify(columns));
     }, [columns]);
 
     useEffect(() => {
-        localStorage.setItem('portfolio-column-order', JSON.stringify(columnOrder));
+        localStorage.setItem(config.cache.local_storage_keys.column_order, JSON.stringify(columnOrder));
     }, [columnOrder]);
 
     const handleColumnToggle = (key) => {
@@ -303,7 +278,7 @@ function AllAccounts() {
     const handleSaveCell = useCallback(async (ticker, fieldName, value, accountName) => {
         if (!accountName) return;
         try {
-            const response = await fetch(`http://192.168.4.42:5001/api/notes/${accountName}`, {
+            const response = await fetch(`${config.api.base_url}${config.api.endpoints.notes}/${accountName}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ticker, [fieldName]: value }),
@@ -331,7 +306,7 @@ function AllAccounts() {
     }, []);
 
     const fetchDataForAccount = useCallback(async (accountName, force = false) => {
-        const cacheKey = `portfolio-data-${accountName}`;
+        const cacheKey = `${config.cache.local_storage_keys.portfolio_data_prefix}${accountName}`;
 
         // If not forcing a refresh, try to load from cache first
         if (!force) {
@@ -347,8 +322,8 @@ function AllAccounts() {
         }
 
         try {
-            const portfolioUrl = `http://192.168.4.42:5001/api/portfolio/${accountName}${force ? '?force=true' : ''}`;
-            const notesUrl = `http://192.168.4.42:5001/api/notes/${accountName}`;
+            const portfolioUrl = `${config.api.base_url}${config.api.endpoints.portfolio}/${accountName}${force ? '?force=true' : ''}`;
+            const notesUrl = `${config.api.base_url}${config.api.endpoints.notes}/${accountName}`;
 
             const [portfolioRes, notesRes] = await Promise.all([
                 fetch(portfolioUrl),
