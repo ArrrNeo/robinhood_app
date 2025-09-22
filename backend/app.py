@@ -11,6 +11,14 @@ from flask import Flask, jsonify, request
 import robin_stocks.robinhood as r
 from cache_utils import cache_robinhood_response
 from datetime import datetime, timedelta, time
+from ticker_data_cache import (
+    ticker_cache,
+    get_fundamentals_cached,
+    get_latest_price_cached,
+    get_name_by_symbol_cached,
+    get_all_price_changes_cached,
+    get_revenue_changes_cached
+)
 
 
 # --- Load Configuration ---
@@ -45,7 +53,7 @@ except Exception as e:
     # The app will still run, but API calls will fail.
 
 # Global dictionary to cache Ticker objects
-ticker_cache = {}
+yfinance_ticker_cache = {}
 def get_yfinance_ticker(symbol, refresh_interval_minutes=None):
     if refresh_interval_minutes is None:
         refresh_interval_minutes = config['cache']['yfinance_refresh_interval_minutes']
@@ -56,18 +64,18 @@ def get_yfinance_ticker(symbol, refresh_interval_minutes=None):
     # Replace invalid characters in the symbol
     symbol = symbol.replace('.', '-')
     # Check if the symbol is in the cache
-    if symbol in ticker_cache:
+    if symbol in yfinance_ticker_cache:
         # Check if the cached data is still fresh
-        last_call_time = ticker_cache[symbol]['timestamp']
+        last_call_time = yfinance_ticker_cache[symbol]['timestamp']
         time_diff = datetime.now() - last_call_time
         if time_diff.total_seconds() < refresh_interval_minutes * 60:
             # Data is fresh, return the cached Ticker object
-            return ticker_cache[symbol]['ticker']
+            return yfinance_ticker_cache[symbol]['ticker']
     # If the ticker is not in the cache or is stale, create a new Ticker object
     # and update the cache with the current timestamp
     try:
         ticker = yfinance.Ticker(symbol)
-        ticker_cache[symbol] = {
+        yfinance_ticker_cache[symbol] = {
             'ticker': ticker,
             'timestamp': datetime.now()
         }
@@ -120,17 +128,15 @@ def get_instrument_by_url_cached(url):
             return {'symbol': ticker}
         return None # Or handle error appropriately
 
-@cache_robinhood_response
+# These functions now use the optimized ticker cache
 def get_fundamentals(ticker):
-    return r.stocks.get_fundamentals(ticker)
+    return get_fundamentals_cached(ticker)
 
-@cache_robinhood_response
 def get_latest_price(ticker):
-    return r.get_latest_price(ticker)
+    return get_latest_price_cached(ticker)
 
-@cache_robinhood_response
 def get_name_by_symbol(ticker):
-    return r.stocks.get_name_by_symbol(ticker)
+    return get_name_by_symbol_cached(ticker)
 
 @cache_robinhood_response
 def get_open_option_positions(account_number):
@@ -144,45 +150,8 @@ def get_option_market_data_by_id(option_id):
 def get_all_stock_orders(account_number, start_date=None):
     return r.orders.get_all_stock_orders(account_number=account_number, start_date=start_date)
 
-def get_price_change_percentage(symbol, days_ago):
-    """ Uses yfinance to get the percentage change over a period, with caching. """
-    try:
-        ticker = get_yfinance_ticker(symbol)
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days_ago)
-        hist = ticker.history(start=start_date, end=end_date)
-        if hist.empty or len(hist) < 2:
-            return 0.0
-        old_price = hist['Close'].iloc[0]
-        new_price = hist['Close'].iloc[-1]
-        if old_price == 0: return 0.0
-        return ((new_price - old_price) / old_price) * 100
-    except Exception as e:
-        print(f"yfinance failed for {symbol} over {days_ago} days: {e}")
-        return 0.0
-
-def get_revenue_change_percent(symbol, type="yearly"):
-    """ Gets revenue change with caching. """
-    try:
-        ticker = get_yfinance_ticker(symbol)
-        if type == "yearly":
-            statement = ticker.financials
-        elif type == "quarterly":
-            statement = ticker.quarterly_income_stmt
-        this=statement.loc['Total Revenue'].iloc[0]
-        prev=statement.loc['Total Revenue'].iloc[1]
-        if prev == 0:
-            revenue_change = 0
-            print ('symbol: ', symbol, ' type: ', type, ' revenue_change: ', revenue_change)
-            return revenue_change
-
-        revenue_change = ((this - prev) * 100 / prev)
-        print ('symbol: ', symbol, ' type: ', type, ' revenue_change: ', revenue_change)
-        return revenue_change
-    except Exception as e:
-        revenue_change = 0
-        print ('symbol: ', symbol, ' type: ', type, ' revenue_change: ', revenue_change, f' Error: {e}')
-        return 0
+# These functions are now handled by the ticker cache system
+# get_price_change_percentage and get_revenue_change_percent are integrated into the cache
 
 def is_order_eligible_for_premium(order: dict):
     """
@@ -409,6 +378,12 @@ def get_data_for_account(account_name, force_refresh=False):
                 high_52_weeks = float(fundamentals.get('high_52_weeks', 0)) if fundamentals.get('high_52_weeks', 0) else 0
                 low_52_weeks  = float(fundamentals.get('low_52_weeks', 0))  if fundamentals.get('low_52_weeks', 0)  else 0
 
+                # Get all price changes in one cached call
+                price_changes = get_all_price_changes_cached(ticker, ticker, get_yfinance_ticker)
+
+                # Get revenue changes in one cached call
+                revenue_changes = get_revenue_changes_cached(ticker, ticker, get_yfinance_ticker)
+
                 all_positions_data.append({
                     "type": "stock",
                     "ticker": ticker,
@@ -427,11 +402,11 @@ def get_data_for_account(account_name, force_refresh=False):
                     "low_52_weeks": low_52_weeks,
                     "position_52_week": (latest_price - low_52_weeks) * 100 / (high_52_weeks - low_52_weeks) if high_52_weeks > low_52_weeks else 0,
                     "side": 'long' if market_value > 0 else 'short',
-                    "one_week_change": get_price_change_percentage(ticker, 7),
-                    "one_month_change": get_price_change_percentage(ticker, 30),
-                    "three_month_change": get_price_change_percentage(ticker, 90),
-                    "one_year_change": get_price_change_percentage(ticker, 365),
-                    "yearly_revenue_change": get_revenue_change_percent(ticker, type="yearly"),
+                    "one_week_change": price_changes['one_week_change'],
+                    "one_month_change": price_changes['one_month_change'],
+                    "three_month_change": price_changes['three_month_change'],
+                    "one_year_change": price_changes['one_year_change'],
+                    "yearly_revenue_change": revenue_changes['yearly_revenue_change'],
                     "sector": fundamentals.get('sector'),
                     "industry": fundamentals.get('industry'),
                 })
@@ -462,6 +437,9 @@ def get_data_for_account(account_name, force_refresh=False):
                 expiry, option_type, strike = parse_occ_symbol(market_data.get('occ_symbol'))
                 fundamentals = get_fundamentals(ticker)[0]
 
+                # Get revenue changes in one cached call for options underlying
+                revenue_changes = get_revenue_changes_cached(ticker, ticker, get_yfinance_ticker)
+
                 try:
                     all_positions_data.append({
                         "type": "option",
@@ -485,7 +463,7 @@ def get_data_for_account(account_name, force_refresh=False):
                         "one_month_change": 0,
                         "three_month_change": 0,
                         "one_year_change": 0,
-                        "yearly_revenue_change": get_revenue_change_percent(ticker, type="yearly"),
+                        "yearly_revenue_change": revenue_changes['yearly_revenue_change'],
                         "sector": fundamentals.get('sector'),
                         "industry": fundamentals.get('industry'),
                     })
@@ -696,8 +674,22 @@ def get_orders(account_name):
         traceback.print_exc()
         return jsonify({"error": f"An internal error occurred. Check backend console. Error: {e}"}), 500
 
+# --- Cleanup Endpoint ---
+@app.route('/api/cleanup-cache', methods=['POST'])
+def cleanup_cache():
+    """Endpoint to manually trigger cache cleanup"""
+    try:
+        ticker_cache.clear_expired_cache()
+        return jsonify({"message": "Cache cleanup completed successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": f"Cache cleanup failed: {str(e)}"}), 500
+
 # --- Run the App ---
 if __name__ == '__main__':
+    # Clean up expired cache on startup
+    print("Cleaning up expired ticker cache...")
+    ticker_cache.clear_expired_cache()
+
     # Load server configuration from config
     app.run(
         debug=config['server']['debug'],
