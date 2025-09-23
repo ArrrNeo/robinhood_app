@@ -23,6 +23,7 @@
     "one_year_change": { "label": "1Y %", "visible": false },
     "yearly_revenue_change": { "label": "Y Rev %", "visible": false },
     "notes": { "label": "Notes", "visible": true },
+    "group": { "label": "Group", "visible": true },
     "comment": { "label": "comment", "visible": false },
     "industry": { "label": "Industry", "visible": false },
     "sector": { "label": "Sector", "visible": false }
@@ -33,7 +34,7 @@
     "portfolio_percent", "side", "type", "strike", "expiry",
     "pe_ratio", "high_52_weeks", "low_52_weeks", "position_52_week",
     "one_week_change", "one_month_change", "three_month_change",
-    "one_year_change", "yearly_revenue_change", "notes", "comment",
+    "one_year_change", "yearly_revenue_change", "notes", "group", "comment",
     "industry", "sector"
   ]
 }

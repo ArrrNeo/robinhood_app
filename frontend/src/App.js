@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import './index.css';
 import OrdersPage from './Orders';
 import AllAccounts from './AllAccounts';
+import { CreateGroupModal, EditGroupModal, GroupRow, GroupAssignmentDropdown, useGroupManagement } from './GroupManager';
 import config from './config.json';
 import tableConfig from './table-columns.json';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
@@ -26,6 +27,12 @@ const GearIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
         <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.438.995s.145.755.438.995l1.003.827c.424.35.534.954.26 1.431l-1.296-2.247a1.125 1.125 0 01-1.37.49l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.332.183-.582.495-.645.87l-.213 1.28c-.09.543-.56.94-1.11.94h-2.593c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.063-.374-.313-.686-.645-.87a6.52 6.52 0 01-.22-.127c-.324-.196-.72-.257-1.075-.124l-1.217.456a1.125 1.125 0 01-1.37-.49l-1.296-2.247a1.125 1.125 0 01.26-1.431l1.003-.827c.293-.24.438.613.438.995s-.145-.755-.438-.995l-1.003-.827a1.125 1.125 0 01-.26-1.431l1.296-2.247a1.125 1.125 0 011.37-.49l1.217.456c.355.133.75.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.645-.87l.213-1.281z" />
         <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+);
+
+const PlusIcon = () => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
     </svg>
 );
 
@@ -136,7 +143,23 @@ function App() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [showCreateGroup, setShowCreateGroup] = useState(false);
+    const [showEditGroup, setShowEditGroup] = useState(false);
+    const [editingGroup, setEditingGroup] = useState(null);
     const [sortConfig, setSortConfig] = useState({ key: 'marketValue', direction: 'descending' });
+
+    // Group management
+    const {
+        groups,
+        groupMetrics,
+        loading: groupsLoading,
+        error: groupsError,
+        createGroup,
+        updateGroup,
+        toggleGroupCollapse,
+        assignPositionToGroup,
+        organizePositionsByGroups
+    } = useGroupManagement(selectedAccount);
     const [currentPage, setCurrentPage] = useState('portfolio'); // 'portfolio', 'orders', or 'all'
     const settingsRef = useRef(null);
 
@@ -364,11 +387,11 @@ function App() {
         fetchData();
     }, [selectedAccount, fetchData]);
 
-    const renderPositionRow = (pos) => {
+    const generatePositionCells = (pos) => {
         const isOption = pos.type === 'option';
         const isCash = pos.type === 'cash';
 
-        const cells = {
+        return {
             ticker: <td className="p-4 font-bold text-white">{pos.ticker}</td>,
             name: <td className="p-4 text-gray-300">{pos.name}</td>,
             marketValue: <td className="p-4 font-mono">{formatCurrency(pos.marketValue)}</td>,
@@ -395,8 +418,20 @@ function App() {
             notes: <td className="p-4 font-mono"><EditableNoteCell ticker={pos.ticker} initialNote={pos.note} onSave={handleSaveCell} /></td>,
             comment: <td className="p-4 font-mono"><EditableIndustryCell ticker={pos.ticker} initialIndustry={pos.comment} onSave={handleSaveCell} /></td>,
             industry: <td className="p-4 text-gray-300">{pos.industry}</td>,
-            sector: <td className="p-4 text-gray-300">{pos.sector}</td>
+            sector: <td className="p-4 text-gray-300">{pos.sector}</td>,
+            group: <td className="p-4">
+                <GroupAssignmentDropdown
+                    position={pos}
+                    groups={groups}
+                    onAssign={assignPositionToGroup}
+                />
+            </td>
         };
+    };
+
+    const renderPositionRow = (pos) => {
+        const cells = generatePositionCells(pos);
+        const isOption = pos.type === 'option';
 
         return (
             <tr key={isOption ? `${pos.ticker}-${pos.expiry}-${pos.strike}-${pos.option_type}` : pos.ticker} className="border-b border-gray-700 last:border-b-0 hover:bg-gray-700/50 transition-colors">
@@ -427,8 +462,8 @@ function App() {
     };
 
     return (
-        <div className="bg-gray-900 text-gray-200 font-sans flex min-h-screen" style={{fontFamily: "'Inter', sans-serif"}}>
-            <aside className="w-60 bg-black/30 p-6 border-r border-gray-700 flex flex-col flex-shrink-0">
+        <div className="bg-gray-900 text-gray-200 font-sans flex h-screen overflow-hidden" style={{fontFamily: "'Inter', sans-serif"}}>
+            <aside className="w-60 bg-black/30 p-6 border-r border-gray-700 flex flex-col flex-shrink-0 overflow-y-auto">
                 <h1 className="text-xl font-bold mb-8 text-white">Portfolio Tracker</h1>
                 <div className="mb-8">
                     <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Accounts</h2>
@@ -474,19 +509,23 @@ function App() {
                 )}
             </aside>
 
-            <main className="flex-1 p-8 overflow-auto">
+            <main className="flex-1 flex flex-col overflow-hidden">
                 {currentPage === 'all' ? (
-                    <AllAccounts />
+                    <div className="p-8 overflow-auto">
+                        <AllAccounts />
+                    </div>
                 ) : currentPage === 'portfolio' ? (
                     <>
-                        {error && <div className="bg-red-800/50 text-red-200 p-4 rounded-lg mb-6 border border-red-700">{error}</div>}
+                        {/* Fixed Header Section */}
+                        <div className="flex-shrink-0 p-8 pb-0">
+                            {error && <div className="bg-red-800/50 text-red-200 p-4 rounded-lg mb-6 border border-red-700">{error}</div>}
 
-                        <header className="mb-8">
-                            <h2 className="text-2xl font-bold text-white capitalize">{selectedAccount.replace(/_/g, ' ')} Overview</h2>
-                            <p className="text-gray-400">Last updated: {portfolioData && portfolioData.timestamp ? new Date(portfolioData.timestamp).toLocaleString() : '...'}</p>
-                        </header>
+                            <header className="mb-8">
+                                <h2 className="text-2xl font-bold text-white capitalize">{selectedAccount.replace(/_/g, ' ')} Overview</h2>
+                                <p className="text-gray-400">Last updated: {portfolioData && portfolioData.timestamp ? new Date(portfolioData.timestamp).toLocaleString() : '...'}</p>
+                            </header>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
                             {loading && !portfolioData ? (
                                 [...Array(5)].map((_, i) => <MetricCardSkeleton key={i} />)
                             ) : portfolioData ? (
@@ -519,12 +558,20 @@ function App() {
                                     </div>
                                 </>
                             ) : null}
-                        </div>
+                            </div>
 
-                        <div className="bg-gray-800/50 border border-gray-700 rounded-lg overflow-x-auto">
-                            <div className="flex justify-between items-center p-4 bg-gray-800 border-b border-gray-700">
+                            {/* Table Controls */}
+                            <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-lg font-semibold text-white">Positions</h3>
                                 <div className="flex items-center space-x-2">
+                                    <button
+                                        onClick={() => setShowCreateGroup(true)}
+                                        className="flex items-center space-x-2 px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
+                                        title="Create Group"
+                                    >
+                                        <PlusIcon />
+                                        <span>Create Group</span>
+                                    </button>
                                     <button onClick={() => fetchData(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" title="Force Refresh">
                                         <RefreshIcon />
                                     </button>
@@ -555,30 +602,64 @@ function App() {
                                     </div>
                                 </div>
                             </div>
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left min-w-[1200px]">
-                                    <thead className="bg-gray-800 border-b border-gray-700">
-                                        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                                            <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
-                                                <tr>
-                                                    {columnOrder.map(key => {
-                                                        const { label, visible } = columns[key];
-                                                        return visible ? (
-                                                            <DraggableHeaderCell key={key} id={key} className="p-4 text-sm font-semibold text-gray-400 tracking-wider" onClick={() => requestSort(key)}>
-                                                                {label}
-                                                                {sortConfig.key === key && <SortIcon direction={sortConfig.direction} />}
-                                                            </DraggableHeaderCell>
-                                                        ) : null
-                                                    })}
-                                                </tr>
-                                            </SortableContext>
-                                        </DndContext>
-                                    </thead>
-                                    <tbody>
+                        </div>
+
+                        {/* Scrollable Table Section */}
+                        <div className="flex-1 overflow-hidden px-8">
+                            <div className="bg-gray-800/50 border border-gray-700 rounded-lg h-full flex flex-col">
+                                <div className="overflow-x-auto flex-1">
+                                    <table className="w-full text-left min-w-[1200px]">
+                                        <thead className="bg-gray-800 border-b border-gray-700 sticky top-0 z-10">
+                                            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                                                <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
+                                                    <tr>
+                                                        {columnOrder.map(key => {
+                                                            const { label, visible } = columns[key];
+                                                            return visible ? (
+                                                                <DraggableHeaderCell key={key} id={key} className="p-4 text-sm font-semibold text-gray-400 tracking-wider" onClick={() => requestSort(key)}>
+                                                                    {label}
+                                                                    {sortConfig.key === key && <SortIcon direction={sortConfig.direction} />}
+                                                                </DraggableHeaderCell>
+                                                            ) : null
+                                                        })}
+                                                    </tr>
+                                                </SortableContext>
+                                            </DndContext>
+                                        </thead>
+                                        <tbody>
                                         {loading && !portfolioData ? (
                                             Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} columns={columns} columnOrder={columnOrder} />)
                                         ) : sortedPositions.length > 0 ? (
-                                            sortedPositions.map(renderPositionRow)
+                                            (() => {
+                                                const { groupedPositions, ungroupedPositions } = organizePositionsByGroups(sortedPositions);
+
+                                                return (
+                                                    <>
+                                                        {/* Render Groups */}
+                                                        {Object.entries(groups.groups).map(([groupId, group]) => (
+                                                            <GroupRow
+                                                                key={groupId}
+                                                                group={group}
+                                                                groupId={groupId}
+                                                                metrics={groupMetrics[groupId]}
+                                                                positions={groupedPositions[groupId] || []}
+                                                                columns={columns}
+                                                                columnOrder={columnOrder}
+                                                                onToggleCollapse={toggleGroupCollapse}
+                                                                renderPositionCells={generatePositionCells}
+                                                                totalPortfolioValue={portfolioData?.summary?.totalEquity || 0}
+                                                                onEdit={(groupId, group) => {
+                                                                    setEditingGroup({ id: groupId, ...group });
+                                                                    setShowEditGroup(true);
+                                                                }}
+                                                            />
+                                                        ))}
+
+                                                        {/* Render Ungrouped Positions */}
+                                                        {ungroupedPositions.map(renderPositionRow)}
+                                                    </>
+                                                );
+                                            })()
                                         ) : (
                                             <tr>
                                                 <td colSpan={Object.values(columns).filter(c => c.visible).length} className="text-center p-8 text-gray-400">
@@ -586,13 +667,41 @@ function App() {
                                                 </td>
                                             </tr>
                                         )}
-                                    </tbody>
-                                </table>
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
+
+                        {/* Create Group Modal */}
+                        <CreateGroupModal
+                            isOpen={showCreateGroup}
+                            onClose={() => setShowCreateGroup(false)}
+                            onSubmit={(groupData) => {
+                                createGroup(groupData);
+                                setShowCreateGroup(false);
+                            }}
+                        />
+
+                        {/* Edit Group Modal */}
+                        <EditGroupModal
+                            isOpen={showEditGroup}
+                            onClose={() => {
+                                setShowEditGroup(false);
+                                setEditingGroup(null);
+                            }}
+                            onSubmit={(groupData) => {
+                                updateGroup(editingGroup.id, groupData);
+                                setShowEditGroup(false);
+                                setEditingGroup(null);
+                            }}
+                            group={editingGroup}
+                        />
                     </>
                 ) : (
-                    <OrdersPage selectedAccount={selectedAccount} />
+                    <div className="p-8 overflow-auto">
+                        <OrdersPage selectedAccount={selectedAccount} />
+                    </div>
                 )}
             </main>
         </div>

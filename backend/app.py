@@ -11,6 +11,7 @@ from flask import Flask, jsonify, request
 import robin_stocks.robinhood as r
 from cache_utils import cache_robinhood_response
 from datetime import datetime, timedelta, time
+import uuid
 from ticker_data_cache import (
     ticker_cache,
     get_fundamentals_cached,
@@ -673,6 +674,279 @@ def get_orders(account_name):
         print(f"ERROR in get_orders for account '{account_name}': {e}")
         traceback.print_exc()
         return jsonify({"error": f"An internal error occurred. Check backend console. Error: {e}"}), 500
+
+# --- Portfolio Groups Management ---
+def get_groups_file_path(account_name):
+    """Get the file path for storing account groups"""
+    groups_dir = os.path.join(config['cache']['cache_directory'], account_name)
+    os.makedirs(groups_dir, exist_ok=True)
+    return os.path.join(groups_dir, 'portfolio_groups.json')
+
+def load_account_groups(account_name):
+    """Load groups configuration for an account"""
+    groups_file = get_groups_file_path(account_name)
+    if os.path.exists(groups_file):
+        try:
+            with open(groups_file, 'r') as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            print(f"Warning: Could not decode groups file for {account_name}. Starting fresh.")
+
+    # Default structure
+    return {
+        "groups": {},
+        "ungrouped": [],
+        "settings": {
+            "default_collapsed": False,
+            "show_group_metrics": True
+        }
+    }
+
+def save_account_groups(account_name, groups_data):
+    """Save groups configuration for an account"""
+    groups_file = get_groups_file_path(account_name)
+    try:
+        with open(groups_file, 'w') as f:
+            json.dump(groups_data, f, indent=2)
+        return True
+    except Exception as e:
+        print(f"Error saving groups for {account_name}: {e}")
+        return False
+
+def calculate_group_metrics(positions, group_position_ids):
+    """Calculate metrics for a group of positions"""
+    group_positions = []
+
+    # Find positions that belong to this group
+    for pos in positions:
+        position_id = get_position_id(pos)
+        if position_id in group_position_ids:
+            group_positions.append(pos)
+
+    if not group_positions:
+        return {
+            "total_market_value": 0,
+            "total_pnl": 0,
+            "total_return_pct": 0,
+            "day_change_abs": 0,
+            "position_count": 0,
+            "sectors": {}
+        }
+
+    # Calculate totals
+    total_market_value = sum(pos.get('marketValue', 0) for pos in group_positions)
+    total_pnl = sum(pos.get('unrealizedPnl', 0) for pos in group_positions)
+    total_cost = sum(pos.get('quantity', 0) * pos.get('avgCost', 0) for pos in group_positions if pos.get('type') != 'cash')
+
+    # Calculate weighted return percentage
+    total_return_pct = (total_pnl / total_cost * 100) if total_cost > 0 else 0
+
+    # Calculate day change (using intraday change)
+    day_change_abs = sum(
+        pos.get('marketValue', 0) * pos.get('intraday_percent_change', 0) / 100
+        for pos in group_positions if pos.get('type') != 'cash'
+    )
+
+    # Sector breakdown
+    sectors = {}
+    for pos in group_positions:
+        if pos.get('sector') and pos.get('type') != 'cash':
+            sector = pos['sector']
+            if sector not in sectors:
+                sectors[sector] = {"count": 0, "value": 0}
+            sectors[sector]["count"] += 1
+            sectors[sector]["value"] += pos.get('marketValue', 0)
+
+    return {
+        "total_market_value": total_market_value,
+        "total_pnl": total_pnl,
+        "total_return_pct": total_return_pct,
+        "day_change_abs": day_change_abs,
+        "position_count": len(group_positions),
+        "sectors": sectors
+    }
+
+def get_position_id(position):
+    """Generate a unique ID for a position"""
+    if position.get('type') == 'option':
+        return f"{position['ticker']}-{position.get('option_type', '')}-{position.get('strike', '')}-{position.get('expiry', '')}"
+    else:
+        return position.get('ticker', '')
+
+# --- Groups API Endpoints ---
+@app.route('/api/groups/<string:account_name>', methods=['GET'])
+def get_groups(account_name):
+    """Get all groups for an account"""
+    try:
+        groups_data = load_account_groups(account_name)
+        return jsonify(groups_data), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to load groups: {str(e)}"}), 500
+
+@app.route('/api/groups/<string:account_name>', methods=['POST'])
+def create_group(account_name):
+    """Create a new group"""
+    try:
+        data = request.get_json()
+        if not data or 'name' not in data:
+            return jsonify({"error": "Group name is required"}), 400
+
+        groups_data = load_account_groups(account_name)
+
+        # Generate unique group ID
+        group_id = str(uuid.uuid4())
+
+        # Available colors for groups
+        colors = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#06B6D4", "#84CC16", "#F97316"]
+
+        # Create new group
+        new_group = {
+            "name": data['name'],
+            "color": data.get('color', colors[len(groups_data['groups']) % len(colors)]),
+            "collapsed": data.get('collapsed', groups_data['settings']['default_collapsed']),
+            "positions": data.get('positions', []),
+            "created_at": datetime.now().isoformat()
+        }
+
+        groups_data['groups'][group_id] = new_group
+
+        if save_account_groups(account_name, groups_data):
+            return jsonify({"group_id": group_id, "group": new_group}), 201
+        else:
+            return jsonify({"error": "Failed to save group"}), 500
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to create group: {str(e)}"}), 500
+
+@app.route('/api/groups/<string:account_name>/<string:group_id>', methods=['PUT'])
+def update_group(account_name, group_id):
+    """Update group properties"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+
+        groups_data = load_account_groups(account_name)
+
+        if group_id not in groups_data['groups']:
+            return jsonify({"error": "Group not found"}), 404
+
+        # Update allowed fields
+        if 'name' in data:
+            groups_data['groups'][group_id]['name'] = data['name']
+        if 'color' in data:
+            groups_data['groups'][group_id]['color'] = data['color']
+        if 'collapsed' in data:
+            groups_data['groups'][group_id]['collapsed'] = data['collapsed']
+
+        groups_data['groups'][group_id]['updated_at'] = datetime.now().isoformat()
+
+        if save_account_groups(account_name, groups_data):
+            return jsonify({"group": groups_data['groups'][group_id]}), 200
+        else:
+            return jsonify({"error": "Failed to save group"}), 500
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to update group: {str(e)}"}), 500
+
+@app.route('/api/groups/<string:account_name>/<string:group_id>', methods=['DELETE'])
+def delete_group(account_name, group_id):
+    """Delete a group and move its positions to ungrouped"""
+    try:
+        groups_data = load_account_groups(account_name)
+
+        if group_id not in groups_data['groups']:
+            return jsonify({"error": "Group not found"}), 404
+
+        # Move positions back to ungrouped
+        group_positions = groups_data['groups'][group_id].get('positions', [])
+        groups_data['ungrouped'].extend(group_positions)
+
+        # Remove duplicates
+        groups_data['ungrouped'] = list(set(groups_data['ungrouped']))
+
+        # Delete the group
+        del groups_data['groups'][group_id]
+
+        if save_account_groups(account_name, groups_data):
+            return jsonify({"message": "Group deleted successfully"}), 200
+        else:
+            return jsonify({"error": "Failed to delete group"}), 500
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to delete group: {str(e)}"}), 500
+
+@app.route('/api/groups/<string:account_name>/assign', methods=['POST'])
+def assign_position_to_group(account_name):
+    """Move a position to a group or ungrouped"""
+    try:
+        data = request.get_json()
+        if not data or 'position_id' not in data:
+            return jsonify({"error": "Position ID is required"}), 400
+
+        position_id = data['position_id']
+        target_group_id = data.get('group_id')  # None means ungrouped
+
+        groups_data = load_account_groups(account_name)
+
+        # Remove position from all current locations
+        # Remove from ungrouped
+        if position_id in groups_data['ungrouped']:
+            groups_data['ungrouped'].remove(position_id)
+
+        # Remove from any existing group
+        for gid, group in groups_data['groups'].items():
+            if position_id in group['positions']:
+                group['positions'].remove(position_id)
+
+        # Add to target location
+        if target_group_id is None:
+            # Move to ungrouped
+            groups_data['ungrouped'].append(position_id)
+        else:
+            # Move to specified group
+            if target_group_id not in groups_data['groups']:
+                return jsonify({"error": "Target group not found"}), 404
+            groups_data['groups'][target_group_id]['positions'].append(position_id)
+
+        if save_account_groups(account_name, groups_data):
+            return jsonify({"message": "Position assigned successfully"}), 200
+        else:
+            return jsonify({"error": "Failed to assign position"}), 500
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to assign position: {str(e)}"}), 500
+
+@app.route('/api/groups/<string:account_name>/metrics', methods=['GET'])
+def get_group_metrics(account_name):
+    """Calculate and return metrics for all groups"""
+    try:
+        # Get portfolio data
+        portfolio_data, status_code = get_data_for_account(account_name)
+        if status_code != 200:
+            return jsonify({"error": "Failed to get portfolio data"}), status_code
+
+        # Get groups data
+        groups_data = load_account_groups(account_name)
+
+        # Calculate metrics for each group
+        group_metrics = {}
+        for group_id, group in groups_data['groups'].items():
+            group_metrics[group_id] = calculate_group_metrics(
+                portfolio_data['positions'],
+                group['positions']
+            )
+
+        # Calculate ungrouped metrics
+        group_metrics['ungrouped'] = calculate_group_metrics(
+            portfolio_data['positions'],
+            groups_data['ungrouped']
+        )
+
+        return jsonify(group_metrics), 200
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to calculate group metrics: {str(e)}"}), 500
 
 # --- Cleanup Endpoint ---
 @app.route('/api/cleanup-cache', methods=['POST'])

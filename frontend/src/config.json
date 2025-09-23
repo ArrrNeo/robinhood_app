@@ -5,7 +5,10 @@
       "accounts": "/api/accounts",
       "portfolio": "/api/portfolio",
       "orders": "/api/orders",
-      "notes": "/api/notes"
+      "notes": "/api/notes",
+      "groups": "/api/groups",
+      "group_metrics": "/api/groups",
+      "group_assign": "/api/groups"
     }
   },
   "cache": {

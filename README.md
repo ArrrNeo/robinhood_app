@@ -9,6 +9,7 @@ A comprehensive full-stack web application that provides advanced portfolio mana
 - **Multi-Account Support**: Manage multiple Robinhood accounts from a single interface
 - **Comprehensive Position Tracking**: View stocks, options, and cash positions with detailed analytics
 - **Smart Caching**: Intelligent caching system with different refresh intervals for market hours vs. after-hours
+- **Portfolio Grouping**: Create custom groups to organize positions with calculated group metrics
 
 ### Advanced Analytics
 - **Options Trading Analysis**:
@@ -29,6 +30,11 @@ A comprehensive full-stack web application that provides advanced portfolio mana
   - Sortable columns with visual indicators
 - **Editable Notes System**: Add and edit notes/comments for individual positions
 - **Historical Orders View**: Complete order history with filtering capabilities
+- **Portfolio Groups Management**:
+  - Create custom groups with names and colors
+  - Collapsible group views with expand/collapse functionality
+  - Group metrics: total market value, P/L, return %, sector breakdown
+  - Persistent group assignments across sessions
 - **Responsive Design**: Works on desktop and mobile devices
 
 ### Data Integration
@@ -149,6 +155,14 @@ robinhood_app/
 - The application automatically calculates earned premium from options strategies
 - View option positions with strike prices, expiration dates, and current P/L
 - Track theta decay strategies and premium collection
+
+### Portfolio Groups
+1. Select an account from the sidebar
+2. Click "Groups" in the Views section
+3. Create new groups with custom names and colors
+4. View group metrics including total market value, P/L, and sector breakdown
+5. Expand/collapse groups to manage screen space
+6. Rename or delete groups as needed
 
 ### Historical Orders
 1. Click "Orders" in the sidebar navigation
