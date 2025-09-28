@@ -151,6 +151,46 @@ def get_option_market_data_by_id(option_id):
 def get_all_stock_orders(account_number, start_date=None):
     return r.orders.get_all_stock_orders(account_number=account_number, start_date=start_date)
 
+@cache_robinhood_response
+def load_phoenix_account():
+    return r.account.load_phoenix_account()
+
+def get_crypto_equity_for_account(account_number):
+    """
+    Gets crypto equity for a specific account using cached phoenix account data.
+    Returns the crypto equity value for the specified account.
+    """
+    try:
+        with open("robinhood_secrets.json") as f:
+            secrets = json.load(f)
+
+        # Get all account data (cached)
+        phoenix_data = load_phoenix_account()
+
+        if not phoenix_data or 'results' not in phoenix_data:
+            return 0.0
+
+        # Find the account by account number
+        for account_data in phoenix_data['results']:
+            if account_data.get('account_number') == account_number:
+                crypto_data = account_data.get('crypto', {})
+
+                # Handle the case where equity might be a dict or a direct value
+                equity_value = crypto_data.get('equity', 0.0)
+
+                if isinstance(equity_value, dict):
+                    # If it's a dict, look for a 'amount' field
+                    crypto_equity = float(equity_value.get('amount', 0.0))
+                else:
+                    crypto_equity = float(equity_value)
+
+                return crypto_equity
+
+        return 0.0
+    except Exception as e:
+        print(f"ERROR in get_crypto_equity_for_account: {e}")
+        return 0.0
+
 # These functions are now handled by the ticker cache system
 # get_price_change_percentage and get_revenue_change_percent are integrated into the cache
 
@@ -351,6 +391,8 @@ def get_data_for_account(account_name, force_refresh=False):
         account_details = load_account_profile(account_number=account_number + '/')
 
         total_equity = float(portfolio.get('extended_hours_equity') or portfolio['equity'])
+        crypto_equity = get_crypto_equity_for_account(account_number)
+        total_equity += crypto_equity
         cash = float(account_details.get('cash')) + float(account_details.get('uncleared_deposits'))
 
         total_pnl = 0
@@ -493,16 +535,40 @@ def get_data_for_account(account_name, force_refresh=False):
             "yearly_revenue_change": 0,
         })
 
+        # Add crypto as a position if there is any
+        if crypto_equity > 0:
+            all_positions_data.append({
+                "type": "crypto", "ticker": "Cryptocurrency", "quantity": 1,
+                "marketValue": crypto_equity, "avgCost": crypto_equity, "unrealizedPnl": 0, "returnPct": 0,
+                "strike": None, "expiry": None, "option_type": None,
+                "earnedPremium": 0.0,
+                "name": "Cryptocurrency",
+                "intraday_percent_change": 0,
+                "pe_ratio": 0,
+                "portfolio_percent": (crypto_equity/total_equity)*100,
+                "high_52_weeks": 0,
+                "low_52_weeks": 0,
+                "position_52_week": 0,
+                "side": 'long',
+                "one_week_change": 0,
+                "one_month_change": 0,
+                "three_month_change": 0,
+                "one_year_change": 0,
+                "yearly_revenue_change": 0,
+                "sector": "Cryptocurrency",
+                "industry": "Digital Assets",
+            })
+
         if float(portfolio['adjusted_portfolio_equity_previous_close']) == 0:
             change_today_abs = 0.0
             change_today_pct = 0.0
         else:
-            change_today_abs = total_equity - float(portfolio['adjusted_portfolio_equity_previous_close'])
+            change_today_abs = total_equity - float(portfolio['adjusted_portfolio_equity_previous_close']) - crypto_equity
             change_today_pct = (change_today_abs / float(portfolio['adjusted_portfolio_equity_previous_close'])) * 100
 
         # 4. Calculate unique tickers
-        # Exclude 'USD Cash' from the count
-        unique_tickers = set(pos['ticker'] for pos in all_positions_data if pos['ticker'] != 'USD Cash')
+        # Exclude 'USD Cash' and 'Cryptocurrency' from the count
+        unique_tickers = set(pos['ticker'] for pos in all_positions_data if pos['ticker'] not in ['USD Cash', 'Cryptocurrency'])
         total_tickers = len(unique_tickers)
 
         summary = {
