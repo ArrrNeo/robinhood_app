@@ -5,6 +5,7 @@
     "marketValue": { "label": "Market Value", "visible": true },
     "quantity": { "label": "Quantity", "visible": true },
     "avgCost": { "label": "Avg Cost", "visible": true },
+    "latest_price": { "label": "Current Price", "visible": true },
     "unrealizedPnl": { "label": "P/L", "visible": true },
     "returnPct": { "label": "% Return", "visible": true },
     "intraday_percent_change": { "label": "Day %", "visible": false },
@@ -29,7 +30,7 @@
     "sector": { "label": "Sector", "visible": false }
   },
   "default_order": [
-    "ticker", "name", "marketValue", "quantity", "avgCost",
+    "ticker", "name", "marketValue", "quantity", "avgCost", "latest_price",
     "unrealizedPnl", "returnPct", "intraday_percent_change",
     "portfolio_percent", "side", "type", "strike", "expiry",
     "pe_ratio", "high_52_weeks", "low_52_weeks", "position_52_week",

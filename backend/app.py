@@ -433,6 +433,7 @@ def get_data_for_account(account_name, force_refresh=False):
                     "quantity": quantity,
                     "marketValue": market_value,
                     "avgCost": avg_cost,
+                    "latest_price": latest_price,
                     "unrealizedPnl": unrealized_pnl,
                     "returnPct": (unrealized_pnl / (quantity * avg_cost)) * 100 if avg_cost > 0 else 0,
                     "strike": None, "expiry": None, "option_type": None,
@@ -490,6 +491,7 @@ def get_data_for_account(account_name, force_refresh=False):
                         "quantity": quantity,
                         "marketValue": market_value,
                         "avgCost": avg_price,
+                        "latest_price": mark_price,
                         "unrealizedPnl": unrealized_pnl,
                         "returnPct": (pnl_per_share / avg_price) * 100 if avg_price > 0 else 0,
                         "strike": strike, "expiry": expiry, "option_type": option_type,
@@ -517,7 +519,7 @@ def get_data_for_account(account_name, force_refresh=False):
         # Add cash as a position
         all_positions_data.append({
             "type": "cash", "ticker": "USD Cash", "quantity": 1,
-            "marketValue": cash, "avgCost": cash, "unrealizedPnl": 0, "returnPct": 0,
+            "marketValue": cash, "avgCost": cash, "latest_price": 1.0, "unrealizedPnl": 0, "returnPct": 0,
             "strike": None, "expiry": None, "option_type": None,
             "earnedPremium": 0.0,
             "name": "Cash",
@@ -539,7 +541,7 @@ def get_data_for_account(account_name, force_refresh=False):
         if crypto_equity > 0:
             all_positions_data.append({
                 "type": "crypto", "ticker": "Cryptocurrency", "quantity": 1,
-                "marketValue": crypto_equity, "avgCost": crypto_equity, "unrealizedPnl": 0, "returnPct": 0,
+                "marketValue": crypto_equity, "avgCost": crypto_equity, "latest_price": crypto_equity, "unrealizedPnl": 0, "returnPct": 0,
                 "strike": None, "expiry": None, "option_type": None,
                 "earnedPremium": 0.0,
                 "name": "Cryptocurrency",

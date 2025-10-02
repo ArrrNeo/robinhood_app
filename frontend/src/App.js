@@ -156,6 +156,7 @@ function App() {
         error: groupsError,
         createGroup,
         updateGroup,
+        deleteGroup,
         toggleGroupCollapse,
         assignPositionToGroup,
         organizePositionsByGroups
@@ -397,6 +398,7 @@ function App() {
             marketValue: <td className="p-4 font-mono">{formatCurrency(pos.marketValue)}</td>,
             quantity: <td className="p-4 font-mono">{isCash ? '-' : pos.quantity.toFixed(2)}</td>,
             avgCost: <td className="p-4 font-mono">{isCash ? '-' : formatCurrency(pos.avgCost)}</td>,
+            latest_price: <td className="p-4 font-mono">{isCash ? '-' : formatCurrency(pos.latest_price)}</td>,
             unrealizedPnl: <td className="p-4 font-mono"><PnlIndicator value={pos.unrealizedPnl} /></td>,
             returnPct: <td className="p-4 font-mono"><PctIndicator value={pos.returnPct} /></td>,
             intraday_percent_change: <td className="p-4 font-mono"><PctIndicator value={pos.intraday_percent_change} /></td>,
@@ -652,6 +654,7 @@ function App() {
                                                                     setEditingGroup({ id: groupId, ...group });
                                                                     setShowEditGroup(true);
                                                                 }}
+                                                                onDelete={deleteGroup}
                                                             />
                                                         ))}
 
