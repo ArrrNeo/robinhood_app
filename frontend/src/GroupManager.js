@@ -385,7 +385,6 @@ export const GroupRow = ({ group, groupId, metrics, positions, columns, columnOr
             {/* Group Positions (when expanded) */}
             {!group.collapsed && positions.map((position, index) => {
                 const cells = renderPositionCells ? renderPositionCells(position) : {};
-                const isOption = position.type === 'option';
 
                 return (
                     <tr key={`${groupId}-${position.ticker || position.id}-${index}`} className="border-b border-gray-700 hover:bg-gray-800/50 transition-colors">

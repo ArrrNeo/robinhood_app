@@ -117,17 +117,21 @@ const EditableIndustryCell = ({ ticker, initialIndustry, onSave }) => (
     <EditableTextCell ticker={ticker} initialValue={initialIndustry} onSave={onSave} fieldName="comment" placeholder="Add comment..." />
 );
 
-const DraggableHeaderCell = ({ id, children, ...props }) => {
+const DraggableHeaderCell = ({ id, children, onClick, ...props }) => {
     const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
     const style = {
         transform: CSS.Transform.toString(transform),
         transition,
-        cursor: 'move',
     };
     return (
         <th ref={setNodeRef} style={style} {...props}>
-            <div {...attributes} {...listeners}>
-                {children}
+            <div className="flex items-center">
+                <span onClick={onClick} className="flex-1 cursor-pointer">
+                    {children}
+                </span>
+                <span {...attributes} {...listeners} className="ml-2 cursor-move p-1">
+                    ⋮⋮
+                </span>
             </div>
         </th>
     );
@@ -152,8 +156,6 @@ function App() {
     const {
         groups,
         groupMetrics,
-        loading: groupsLoading,
-        error: groupsError,
         createGroup,
         updateGroup,
         deleteGroup,
@@ -161,7 +163,14 @@ function App() {
         assignPositionToGroup,
         organizePositionsByGroups
     } = useGroupManagement(selectedAccount);
-    const [currentPage, setCurrentPage] = useState('portfolio'); // 'portfolio', 'orders', or 'all'
+    const [currentPage, setCurrentPage] = useState(() => {
+        try {
+            const saved = localStorage.getItem(config.cache.local_storage_keys.current_page);
+            return saved || 'portfolio';
+        } catch (e) {
+            return 'portfolio';
+        }
+    }); // 'portfolio', 'orders', or 'all'
     const settingsRef = useRef(null);
 
     const initialColumns = tableConfig.default_columns;
@@ -206,22 +215,147 @@ function App() {
     }, [columnOrder]);
 
 
-    const sortedPositions = useMemo(() => {
-        if (!portfolioData || !portfolioData.positions) return [];
-        let sortableItems = [...portfolioData.positions];
-        if (sortConfig.key) {
-            sortableItems.sort((a, b) => {
-                if (a[sortConfig.key] < b[sortConfig.key]) {
-                    return sortConfig.direction === 'ascending' ? -1 : 1;
-                }
-                if (a[sortConfig.key] > b[sortConfig.key]) {
-                    return sortConfig.direction === 'ascending' ? 1 : -1;
-                }
-                return 0;
-            });
+    // Compute sorted data structure for rendering
+    const sortedData = useMemo(() => {
+        if (!portfolioData || !portfolioData.positions) {
+            return { sortedGroups: [], sortedUngrouped: [] };
         }
-        return sortableItems;
-    }, [portfolioData, sortConfig]);
+
+        // Group-applicable sorting keys
+        const groupSortableKeys = ['marketValue', 'unrealizedPnl', 'returnPct', 'portfolio_percent'];
+        const isGroupSortable = groupSortableKeys.includes(sortConfig.key);
+
+        // Organize positions into groups
+        const { groupedPositions, ungroupedPositions } = organizePositionsByGroups(portfolioData.positions);
+
+        if (!sortConfig.key || !isGroupSortable) {
+            // For non-group-applicable keys or no sorting, sort positions individually within groups
+            const sortedUnits = [];
+
+            // Add groups (positions sorted within each group)
+            Object.entries(groups.groups).forEach(([groupId, group]) => {
+                let positions = [...(groupedPositions[groupId] || [])];
+                if (sortConfig.key) {
+                    positions.sort((a, b) => {
+                        if (a[sortConfig.key] < b[sortConfig.key]) {
+                            return sortConfig.direction === 'ascending' ? -1 : 1;
+                        }
+                        if (a[sortConfig.key] > b[sortConfig.key]) {
+                            return sortConfig.direction === 'ascending' ? 1 : -1;
+                        }
+                        return 0;
+                    });
+                }
+                if (positions.length > 0) {
+                    sortedUnits.push({
+                        type: 'group',
+                        groupId,
+                        group,
+                        positions
+                    });
+                }
+            });
+
+            // Add ungrouped positions
+            let sortedUngrouped = [...ungroupedPositions];
+            if (sortConfig.key) {
+                sortedUngrouped.sort((a, b) => {
+                    if (a[sortConfig.key] < b[sortConfig.key]) {
+                        return sortConfig.direction === 'ascending' ? -1 : 1;
+                    }
+                    if (a[sortConfig.key] > b[sortConfig.key]) {
+                        return sortConfig.direction === 'ascending' ? 1 : -1;
+                    }
+                    return 0;
+                });
+            }
+            sortedUngrouped.forEach(position => {
+                sortedUnits.push({
+                    type: 'position',
+                    position
+                });
+            });
+
+            return { sortedUnits };
+        }
+
+        // For group-applicable keys, create sortable units (groups + ungrouped positions)
+        const sortableUnits = [];
+
+        // Add each group as a unit with its aggregate value
+        Object.entries(groups.groups).forEach(([groupId, group]) => {
+            let positions = [...(groupedPositions[groupId] || [])];
+            if (positions.length > 0) {
+                const metrics = groupMetrics[groupId];
+                let sortValue = 0;
+
+                // Calculate the appropriate sort value based on the key
+                switch(sortConfig.key) {
+                    case 'marketValue':
+                        sortValue = metrics?.total_market_value || 0;
+                        break;
+                    case 'unrealizedPnl':
+                        sortValue = metrics?.total_pnl || 0;
+                        break;
+                    case 'returnPct':
+                        const totalMarketValue = metrics?.total_market_value || 0;
+                        const totalPnl = metrics?.total_pnl || 0;
+                        const totalCost = totalMarketValue - totalPnl;
+                        sortValue = totalCost !== 0 ? (totalPnl / totalCost) * 100 : 0;
+                        break;
+                    case 'portfolio_percent':
+                        const totalPortfolioValue = portfolioData?.summary?.totalEquity || 0;
+                        const groupMarketValue = metrics?.total_market_value || 0;
+                        sortValue = totalPortfolioValue > 0 ? (groupMarketValue / totalPortfolioValue) * 100 : 0;
+                        break;
+                    default:
+                        sortValue = 0;
+                }
+
+                // Sort positions within the group by the same key
+                positions.sort((a, b) => {
+                    if (a[sortConfig.key] < b[sortConfig.key]) {
+                        return sortConfig.direction === 'ascending' ? -1 : 1;
+                    }
+                    if (a[sortConfig.key] > b[sortConfig.key]) {
+                        return sortConfig.direction === 'ascending' ? 1 : -1;
+                    }
+                    return 0;
+                });
+
+                sortableUnits.push({
+                    type: 'group',
+                    groupId,
+                    group,
+                    positions,
+                    sortValue
+                });
+            }
+        });
+
+        // Add ungrouped positions as individual units
+        ungroupedPositions.forEach(position => {
+            sortableUnits.push({
+                type: 'position',
+                position,
+                sortValue: position[sortConfig.key] || 0
+            });
+        });
+
+        // Sort the units
+        sortableUnits.sort((a, b) => {
+            if (a.sortValue < b.sortValue) {
+                return sortConfig.direction === 'ascending' ? -1 : 1;
+            }
+            if (a.sortValue > b.sortValue) {
+                return sortConfig.direction === 'ascending' ? 1 : -1;
+            }
+            return 0;
+        });
+
+        // Return sorted units as-is for interleaved rendering
+        return { sortedUnits: sortableUnits };
+    }, [portfolioData, sortConfig, groups, groupMetrics, organizePositionsByGroups]);
 
     const requestSort = (key) => {
         let direction = 'ascending';
@@ -284,6 +418,10 @@ function App() {
             localStorage.setItem(config.cache.local_storage_keys.selected_account, selectedAccount);
         }
     }, [selectedAccount]);
+
+    useEffect(() => {
+        localStorage.setItem(config.cache.local_storage_keys.current_page, currentPage);
+    }, [currentPage]);
 
     const handleSaveCell = useCallback(async (ticker, fieldName, value) => {
         if (!selectedAccount) return;
@@ -631,20 +769,18 @@ function App() {
                                         <tbody>
                                         {loading && !portfolioData ? (
                                             Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} columns={columns} columnOrder={columnOrder} />)
-                                        ) : sortedPositions.length > 0 ? (
-                                            (() => {
-                                                const { groupedPositions, ungroupedPositions } = organizePositionsByGroups(sortedPositions);
-
-                                                return (
-                                                    <>
-                                                        {/* Render Groups */}
-                                                        {Object.entries(groups.groups).map(([groupId, group]) => (
+                                        ) : portfolioData && portfolioData.positions.length > 0 ? (
+                                            <>
+                                                {/* Render sorted units (groups and positions interleaved) */}
+                                                {sortedData.sortedUnits.map((unit, index) => {
+                                                    if (unit.type === 'group') {
+                                                        return (
                                                             <GroupRow
-                                                                key={groupId}
-                                                                group={group}
-                                                                groupId={groupId}
-                                                                metrics={groupMetrics[groupId]}
-                                                                positions={groupedPositions[groupId] || []}
+                                                                key={unit.groupId}
+                                                                group={unit.group}
+                                                                groupId={unit.groupId}
+                                                                metrics={groupMetrics[unit.groupId]}
+                                                                positions={unit.positions}
                                                                 columns={columns}
                                                                 columnOrder={columnOrder}
                                                                 onToggleCollapse={toggleGroupCollapse}
@@ -656,13 +792,12 @@ function App() {
                                                                 }}
                                                                 onDelete={deleteGroup}
                                                             />
-                                                        ))}
-
-                                                        {/* Render Ungrouped Positions */}
-                                                        {ungroupedPositions.map(renderPositionRow)}
-                                                    </>
-                                                );
-                                            })()
+                                                        );
+                                                    } else {
+                                                        return renderPositionRow(unit.position);
+                                                    }
+                                                })}
+                                            </>
                                         ) : (
                                             <tr>
                                                 <td colSpan={Object.values(columns).filter(c => c.visible).length} className="text-center p-8 text-gray-400">

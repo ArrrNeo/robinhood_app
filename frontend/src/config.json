@@ -16,6 +16,7 @@
       "columns": "portfolio-columns",
       "column_order": "portfolio-column-order",
       "selected_account": "selectedAccount",
+      "current_page": "currentPage",
       "portfolio_data_prefix": "portfolio-data-"
     }
   }

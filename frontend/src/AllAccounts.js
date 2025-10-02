@@ -107,17 +107,21 @@ const EditableIndustryCell = ({ ticker, initialIndustry, onSave }) => (
     <EditableTextCell ticker={ticker} initialValue={initialIndustry} onSave={onSave} fieldName="comment" placeholder="Add comment..." />
 );
 
-const DraggableHeaderCell = ({ id, children, ...props }) => {
+const DraggableHeaderCell = ({ id, children, onClick, ...props }) => {
     const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
     const style = {
         transform: CSS.Transform.toString(transform),
         transition,
-        cursor: 'move',
     };
     return (
         <th ref={setNodeRef} style={style} {...props}>
-            <div {...attributes} {...listeners}>
-                {children}
+            <div className="flex items-center">
+                <span onClick={onClick} className="flex-1 cursor-pointer">
+                    {children}
+                </span>
+                <span {...attributes} {...listeners} className="ml-2 cursor-move p-1">
+                    ⋮⋮
+                </span>
             </div>
         </th>
     );
@@ -389,6 +393,7 @@ function AllAccounts() {
             marketValue: <td className="p-4 font-mono">{formatCurrency(pos.marketValue)}</td>,
             quantity: <td className="p-4 font-mono">{isCash ? '-' : pos.quantity.toFixed(2)}</td>,
             avgCost: <td className="p-4 font-mono">{isCash ? '-' : formatCurrency(pos.avgCost)}</td>,
+            latest_price: <td className="p-4 font-mono">{isCash ? '-' : formatCurrency(pos.latest_price)}</td>,
             unrealizedPnl: <td className="p-4 font-mono"><PnlIndicator value={pos.unrealizedPnl} /></td>,
             returnPct: <td className="p-4 font-mono"><PctIndicator value={pos.returnPct} /></td>,
             intraday_percent_change: <td className="p-4 font-mono"><PctIndicator value={pos.intraday_percent_change} /></td>,
@@ -408,6 +413,7 @@ function AllAccounts() {
             one_year_change: <td className="p-4 font-mono"><PctIndicator value={pos.one_year_change} /></td>,
             yearly_revenue_change: <td className="p-4 font-mono"><PctIndicator value={pos.yearly_revenue_change} /></td>,
             notes: <td className="p-4 font-mono"><EditableNoteCell ticker={pos.ticker} initialNote={pos.note} onSave={(ticker, fieldName, value) => handleSaveCell(ticker, fieldName, value, accountName)} /></td>,
+            group: <td className="p-4 text-gray-300">{pos.group || '-'}</td>,
             comment: <td className="p-4 font-mono"><EditableIndustryCell ticker={pos.ticker} initialIndustry={pos.comment} onSave={(ticker, fieldName, value) => handleSaveCell(ticker, fieldName, value, accountName)} /></td>,
             industry: <td className="p-4 text-gray-300">{pos.industry}</td>,
             sector: <td className="p-4 text-gray-300">{pos.sector}</td>

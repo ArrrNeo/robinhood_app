@@ -469,10 +469,23 @@ def get_data_for_account(account_name, force_refresh=False):
                 quantity = float(pos['quantity'])
                 avg_price = float(pos['average_price']) / 100
                 mark_price = float(market_data.get('mark_price', 0))
-                market_value = quantity * mark_price * 100
 
+                # For short options, Robinhood returns negative avg_price
+                # Convert to positive (representing the credit received)
+                is_short = pos.get('type') == 'short'
+                if is_short:
+                    avg_price = abs(avg_price)
+
+                # For short options, market value is negative (liability)
+                market_value = quantity * mark_price * 100
+                if is_short:
+                    market_value *= -1
+
+                # P/L calculation
+                # Long: P/L = (current_price - avg_price) * quantity * 100
+                # Short: P/L = (avg_price - current_price) * quantity * 100
                 pnl_per_share = mark_price - avg_price
-                if pos.get('type') == 'short':
+                if is_short:
                     pnl_per_share *= -1
 
                 unrealized_pnl = pnl_per_share * quantity * 100
