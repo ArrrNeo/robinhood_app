@@ -8,7 +8,9 @@
       "notes": "/api/notes",
       "groups": "/api/groups",
       "group_metrics": "/api/groups",
-      "group_assign": "/api/groups"
+      "group_assign": "/api/groups",
+      "auth_login": "/api/auth/login",
+      "auth_status": "/api/auth/status"
     }
   },
   "cache": {

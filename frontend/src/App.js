@@ -36,6 +36,12 @@ const PlusIcon = () => (
     </svg>
 );
 
+const LoginIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+    </svg>
+);
+
 const MetricCardSkeleton = () => (
     <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 animate-pulse">
         <div className="h-4 bg-gray-600 rounded w-3/4 mb-3"></div>
@@ -151,6 +157,9 @@ function App() {
     const [showEditGroup, setShowEditGroup] = useState(false);
     const [editingGroup, setEditingGroup] = useState(null);
     const [sortConfig, setSortConfig] = useState({ key: 'marketValue', direction: 'descending' });
+    const [loginLoading, setLoginLoading] = useState(false);
+    const [loginMessage, setLoginMessage] = useState(null);
+    const [globalNotes, setGlobalNotes] = useState({});
 
     // Group management
     const {
@@ -423,17 +432,45 @@ function App() {
         localStorage.setItem(config.cache.local_storage_keys.current_page, currentPage);
     }, [currentPage]);
 
-    const handleSaveCell = useCallback(async (ticker, fieldName, value) => {
-        if (!selectedAccount) return;
+    // Fetch global notes (ticker-based, not account-based)
+    const fetchGlobalNotes = useCallback(async () => {
         try {
-            const response = await fetch(`${config.api.base_url}${config.api.endpoints.notes}/${selectedAccount}`, {
+            const response = await fetch(`${config.api.base_url}${config.api.endpoints.notes}`);
+            if (response.ok) {
+                const notes = await response.json();
+                setGlobalNotes(notes);
+                return notes;
+            }
+        } catch (e) {
+            console.error('Failed to fetch global notes:', e);
+        }
+        return {};
+    }, []);
+
+    // Fetch global notes on mount
+    useEffect(() => {
+        fetchGlobalNotes();
+    }, [fetchGlobalNotes]);
+
+    const handleSaveCell = useCallback(async (ticker, fieldName, value) => {
+        try {
+            const response = await fetch(`${config.api.base_url}${config.api.endpoints.notes}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ticker, [fieldName]: value }),
             });
             if (!response.ok) throw new Error(`Failed to save ${fieldName}.`);
 
-            // Optimistically update local state
+            // Update global notes state
+            setGlobalNotes(prev => ({
+                ...prev,
+                [ticker]: {
+                    ...prev[ticker],
+                    [fieldName]: value
+                }
+            }));
+
+            // Optimistically update portfolioData
             setPortfolioData(prevData => {
                 if (!prevData) return null;
                 const updatedPositions = prevData.positions.map(p =>
@@ -444,9 +481,8 @@ function App() {
 
         } catch (e) {
             console.error(`Failed to save ${fieldName}:`, e);
-            // Optionally show an error to the user
         }
-    }, [selectedAccount]);
+    }, []);
 
     const fetchData = useCallback(async (force = false) => {
         if (!selectedAccount) return;
@@ -477,30 +513,27 @@ function App() {
 
         try {
             const portfolioUrl = `${config.api.base_url}${config.api.endpoints.portfolio}/${selectedAccount}${force ? '?force=true' : ''}`;
-            const notesUrl = `${config.api.base_url}${config.api.endpoints.notes}/${selectedAccount}`;
 
-            const [portfolioRes, notesRes] = await Promise.all([
+            // Fetch portfolio data and global notes in parallel
+            const [portfolioRes, notes] = await Promise.all([
                 fetch(portfolioUrl),
-                fetch(notesUrl)
+                force ? fetchGlobalNotes() : Promise.resolve(globalNotes)
             ]);
 
             if (!portfolioRes.ok) {
                 const errData = await portfolioRes.json();
                 throw new Error(errData.error || `HTTP error! status: ${portfolioRes.status}`);
             }
-            if (!notesRes.ok) {
-                console.warn(`Could not fetch notes for ${selectedAccount}. Status: ${notesRes.status}`);
-            }
 
             const portfolioResult = await portfolioRes.json();
-            const notesResult = notesRes.ok ? await notesRes.json() : {};
 
             if (portfolioResult.error) throw new Error(portfolioResult.error);
 
+            // Merge positions with global notes
             const positionsWithNotes = portfolioResult.positions.map(pos => ({
                 ...pos,
-                note: notesResult[pos.ticker]?.note || '',
-                comment: notesResult[pos.ticker]?.comment || ''
+                note: notes[pos.ticker]?.note || '',
+                comment: notes[pos.ticker]?.comment || ''
             }));
 
             const finalData = { ...portfolioResult, positions: positionsWithNotes };
@@ -519,12 +552,37 @@ function App() {
         } finally {
             setLoading(false);
         }
-    }, [selectedAccount]);
+    }, [selectedAccount, globalNotes, fetchGlobalNotes]);
 
 
     useEffect(() => {
         fetchData();
     }, [selectedAccount, fetchData]);
+
+    const handleReLogin = async () => {
+        setLoginLoading(true);
+        setLoginMessage(null);
+        setError(null);
+        try {
+            const response = await fetch(`${config.api.base_url}${config.api.endpoints.auth_login}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                setLoginMessage({ type: 'success', text: 'Login successful! You can now refresh your data.' });
+                // Auto-hide success message after 5 seconds
+                setTimeout(() => setLoginMessage(null), 5000);
+            } else {
+                setLoginMessage({ type: 'error', text: data.error || 'Login failed' });
+            }
+        } catch (e) {
+            setLoginMessage({ type: 'error', text: `Login failed: ${e.message}` });
+        } finally {
+            setLoginLoading(false);
+        }
+    };
 
     const generatePositionCells = (pos) => {
         const isOption = pos.type === 'option';
@@ -659,6 +717,15 @@ function App() {
                         {/* Fixed Header Section */}
                         <div className="flex-shrink-0 p-8 pb-0">
                             {error && <div className="bg-red-800/50 text-red-200 p-4 rounded-lg mb-6 border border-red-700">{error}</div>}
+                            {loginMessage && (
+                                <div className={`p-4 rounded-lg mb-6 border ${
+                                    loginMessage.type === 'success'
+                                        ? 'bg-green-800/50 text-green-200 border-green-700'
+                                        : 'bg-red-800/50 text-red-200 border-red-700'
+                                }`}>
+                                    {loginMessage.text}
+                                </div>
+                            )}
 
                             <header className="mb-8">
                                 <h2 className="text-2xl font-bold text-white capitalize">{selectedAccount.replace(/_/g, ' ')} Overview</h2>
@@ -711,6 +778,14 @@ function App() {
                                     >
                                         <PlusIcon />
                                         <span>Create Group</span>
+                                    </button>
+                                    <button
+                                        onClick={handleReLogin}
+                                        disabled={loginLoading}
+                                        className="p-2 rounded-full hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Re-login to Robinhood"
+                                    >
+                                        <LoginIcon />
                                     </button>
                                     <button onClick={() => fetchData(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" title="Force Refresh">
                                         <RefreshIcon />

@@ -635,25 +635,34 @@ def get_accounts():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/notes/<string:account_name>', methods=['GET'])
-def get_notes(account_name):
-    """API endpoint to get notes for a specific account."""
-    notes_path = config['paths']['notes_file']
+# Global notes endpoints (ticker-based, not account-based)
+@app.route('/api/notes', methods=['GET'])
+def get_global_notes():
+    """API endpoint to get all global notes (ticker-based)."""
+    notes_dir = os.path.dirname(config['paths']['notes_file'])
+    os.makedirs(notes_dir, exist_ok=True)
+    notes_path = os.path.join(notes_dir, 'global_notes.json')
+
     if os.path.exists(notes_path):
         with open(notes_path, 'r') as f:
-            return jsonify(json.load(f))
+            try:
+                return jsonify(json.load(f))
+            except json.JSONDecodeError:
+                return jsonify({})
     return jsonify({})
 
-@app.route('/api/notes/<string:account_name>', methods=['POST'])
-def update_note(account_name):
-    """API endpoint to update a note for a specific ticker in an account."""
+@app.route('/api/notes', methods=['POST'])
+def update_global_note():
+    """API endpoint to update a note for a specific ticker (global, not account-specific)."""
     data = request.get_json()
     if not data or 'ticker' not in data or not ('note' in data or 'comment' in data):
         return jsonify({"error": "Invalid payload"}), 400
+
     notes_dir = os.path.dirname(config['paths']['notes_file'])
     os.makedirs(notes_dir, exist_ok=True)
     notes_path = os.path.join(notes_dir, 'global_notes.json')
     notes = {}
+
     if os.path.exists(notes_path):
         with open(notes_path, 'r') as f:
             try:
@@ -673,6 +682,17 @@ def update_note(account_name):
     with open(notes_path, 'w') as f:
         json.dump(notes, f, indent=2)
     return jsonify({"success": True, **data})
+
+# Legacy endpoints for backward compatibility (these just call the global endpoints)
+@app.route('/api/notes/<string:account_name>', methods=['GET'])
+def get_notes(account_name):
+    """Legacy API endpoint - notes are now global. Account name is ignored."""
+    return get_global_notes()
+
+@app.route('/api/notes/<string:account_name>', methods=['POST'])
+def update_note(account_name):
+    """Legacy API endpoint - notes are now global. Account name is ignored."""
+    return update_global_note()
 
 @app.route('/api/orders/<string:account_name>', methods=['GET'])
 def get_orders(account_name):
@@ -1038,6 +1058,40 @@ def cleanup_cache():
         return jsonify({"message": "Cache cleanup completed successfully"}), 200
     except Exception as e:
         return jsonify({"error": f"Cache cleanup failed: {str(e)}"}), 500
+
+# --- Login/Authentication Endpoints ---
+@app.route('/api/auth/login', methods=['POST'])
+def re_login():
+    """Force re-login to Robinhood"""
+    try:
+        print("Starting login process...")
+        with open("robinhood_secrets.json") as f:
+            secrets = json.load(f)
+
+        r.login(
+            username=secrets["USER"],
+            password=secrets["PASSWORD"],
+            store_session=True,
+            mfa_code=secrets["MY_2FA_APP_HERE"]
+        )
+        print("Robinhood login successful.")
+        return jsonify({"success": True, "message": "Login successful"}), 200
+    except Exception as e:
+        print(f"ERROR: Robinhood login failed: {e}")
+        return jsonify({"success": False, "error": f"Login failed: {str(e)}"}), 500
+
+@app.route('/api/auth/status', methods=['GET'])
+def login_status():
+    """Check if logged in to Robinhood"""
+    try:
+        # Try to fetch profile info as a simple auth check
+        profile = r.account.load_account_profile()
+        if profile:
+            return jsonify({"authenticated": True}), 200
+        else:
+            return jsonify({"authenticated": False}), 200
+    except Exception as e:
+        return jsonify({"authenticated": False, "error": str(e)}), 200
 
 # --- Run the App ---
 if __name__ == '__main__':

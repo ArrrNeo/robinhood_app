@@ -140,6 +140,7 @@ function AllAccounts() {
         ROTH_IRA: { key: 'marketValue', direction: 'descending' },
         TRADITIONAL_IRA: { key: 'marketValue', direction: 'descending' }
     });
+    const [globalNotes, setGlobalNotes] = useState({});
     const settingsRef = useRef(null);
 
     const initialColumns = tableConfig.default_columns;
@@ -279,29 +280,53 @@ function AllAccounts() {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const handleSaveCell = useCallback(async (ticker, fieldName, value, accountName) => {
-        if (!accountName) return;
+    // Fetch global notes
+    const fetchGlobalNotes = useCallback(async () => {
         try {
-            const response = await fetch(`${config.api.base_url}${config.api.endpoints.notes}/${accountName}`, {
+            const response = await fetch(`${config.api.base_url}${config.api.endpoints.notes}`);
+            if (response.ok) {
+                const notes = await response.json();
+                setGlobalNotes(notes);
+                return notes;
+            }
+        } catch (e) {
+            console.error('Failed to fetch global notes:', e);
+        }
+        return {};
+    }, []);
+
+    const handleSaveCell = useCallback(async (ticker, fieldName, value, accountName) => {
+        try {
+            const response = await fetch(`${config.api.base_url}${config.api.endpoints.notes}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ticker, [fieldName]: value }),
             });
             if (!response.ok) throw new Error(`Failed to save ${fieldName}.`);
 
-            // Optimistically update local state
+            // Update global notes
+            setGlobalNotes(prev => ({
+                ...prev,
+                [ticker]: {
+                    ...prev[ticker],
+                    [fieldName]: value
+                }
+            }));
+
+            // Update all accounts that have this ticker
             setPortfolioData(prevData => {
-                if (!prevData[accountName]) return prevData;
-                const updatedPositions = prevData[accountName].positions.map(p =>
-                    p.ticker === ticker ? { ...p, [fieldName]: value } : p
-                );
-                return {
-                    ...prevData,
-                    [accountName]: {
-                        ...prevData[accountName],
-                        positions: updatedPositions
+                const updatedData = { ...prevData };
+                Object.keys(updatedData).forEach(account => {
+                    if (updatedData[account]?.positions) {
+                        updatedData[account] = {
+                            ...updatedData[account],
+                            positions: updatedData[account].positions.map(p =>
+                                p.ticker === ticker ? { ...p, [fieldName]: value } : p
+                            )
+                        };
                     }
-                };
+                });
+                return updatedData;
             });
 
         } catch (e) {
@@ -327,12 +352,8 @@ function AllAccounts() {
 
         try {
             const portfolioUrl = `${config.api.base_url}${config.api.endpoints.portfolio}/${accountName}${force ? '?force=true' : ''}`;
-            const notesUrl = `${config.api.base_url}${config.api.endpoints.notes}/${accountName}`;
 
-            const [portfolioRes, notesRes] = await Promise.all([
-                fetch(portfolioUrl),
-                fetch(notesUrl)
-            ]);
+            const portfolioRes = await fetch(portfolioUrl);
 
             if (!portfolioRes.ok) {
                 const errData = await portfolioRes.json();
@@ -340,14 +361,14 @@ function AllAccounts() {
             }
 
             const portfolioResult = await portfolioRes.json();
-            const notesResult = notesRes.ok ? await notesRes.json() : {};
 
             if (portfolioResult.error) throw new Error(portfolioResult.error);
 
+            // Merge positions with global notes
             const positionsWithNotes = portfolioResult.positions.map(pos => ({
                 ...pos,
-                note: notesResult[pos.ticker]?.note || '',
-                comment: notesResult[pos.ticker]?.comment || ''
+                note: globalNotes[pos.ticker]?.note || '',
+                comment: globalNotes[pos.ticker]?.comment || ''
             }));
 
             const finalData = { ...portfolioResult, positions: positionsWithNotes };
@@ -364,20 +385,29 @@ function AllAccounts() {
             setError(`Failed to fetch portfolio data for ${accountName}. Error: ${e.message}`);
             console.error(e);
         }
-    }, []);
+    }, [globalNotes]);
 
     const fetchAllData = useCallback(async (force = false) => {
         setLoading(true);
         setError(null);
 
         try {
+            // Fetch global notes if forcing refresh
+            if (force) {
+                await fetchGlobalNotes();
+            }
             await Promise.all(accounts.map(account => fetchDataForAccount(account, force)));
         } catch (e) {
             setError(`Failed to fetch data for all accounts. Error: ${e.message}`);
         } finally {
             setLoading(false);
         }
-    }, [accounts, fetchDataForAccount]);
+    }, [accounts, fetchDataForAccount, fetchGlobalNotes]);
+
+    useEffect(() => {
+        // Fetch global notes on mount
+        fetchGlobalNotes();
+    }, [fetchGlobalNotes]);
 
     useEffect(() => {
         fetchAllData();
