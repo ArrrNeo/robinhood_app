@@ -616,6 +616,107 @@ def get_data_for_account(account_name, force_refresh=False):
         traceback.print_exc()
         return {"error": f"An internal error occurred. Check the backend console for details. Error: {e}"}, 500
 
+def get_data_for_all_accounts(force_refresh=False):
+    """
+    Fetches and combines portfolio data from all accounts.
+    Returns aggregated summary and combined positions with account labels.
+    """
+    cache_dir = os.path.join(config['cache']['cache_directory'], 'ALL')
+    os.makedirs(cache_dir, exist_ok=True)
+    portfolio_cache_file = os.path.join(cache_dir, 'portfolio_data.json')
+
+    # Determine cache duration based on market hours
+    if is_market_hours():
+        CACHE_DURATION_SECONDS = config['cache']['market_hours_duration_seconds']
+    else:
+        CACHE_DURATION_SECONDS = config['cache']['after_hours_duration_seconds']
+
+    # Check for cached data first
+    if not force_refresh and os.path.exists(portfolio_cache_file):
+        with open(portfolio_cache_file, 'r') as f:
+            try:
+                cached_data = json.load(f)
+                last_fetched_time = datetime.fromisoformat(cached_data.get("timestamp"))
+                if (datetime.now() - last_fetched_time).total_seconds() < CACHE_DURATION_SECONDS:
+                    print(f"Serving cached portfolio data for ALL accounts.")
+                    response_data = cached_data.get("data", {})
+                    response_data['timestamp'] = cached_data.get("timestamp")
+                    return response_data, 200
+            except (json.JSONDecodeError, KeyError, TypeError) as e:
+                print(f"Warning: Could not read cache file {portfolio_cache_file}. Refetching. Error: {e}")
+
+    print(f"Fetching fresh portfolio data for ALL accounts.")
+
+    try:
+        # Fetch data for all accounts
+        account_names = ['INDIVIDUAL', 'ROTH_IRA', 'TRADITIONAL_IRA']
+        all_accounts_data = {}
+
+        for account_name in account_names:
+            data, status_code = get_data_for_account(account_name, force_refresh=force_refresh)
+            if status_code == 200:
+                all_accounts_data[account_name] = data
+            else:
+                print(f"Warning: Failed to fetch data for {account_name}")
+
+        # Combine positions from all accounts
+        combined_positions = []
+        for account_name, account_data in all_accounts_data.items():
+            for position in account_data.get('positions', []):
+                # Add account field to each position
+                position_with_account = {**position, 'account': account_name}
+                combined_positions.append(position_with_account)
+
+        # Calculate combined summary metrics
+        total_equity = sum(data.get('summary', {}).get('totalEquity', 0) for data in all_accounts_data.values())
+        total_change_today_abs = sum(data.get('summary', {}).get('changeTodayAbs', 0) for data in all_accounts_data.values())
+        total_pnl = sum(data.get('summary', {}).get('totalPnl', 0) for data in all_accounts_data.values())
+        total_earned_premium = sum(data.get('summary', {}).get('earnedPremium', 0) for data in all_accounts_data.values())
+
+        # Calculate combined percentage for today's change
+        total_previous_equity = sum(
+            data.get('summary', {}).get('totalEquity', 0) - data.get('summary', {}).get('changeTodayAbs', 0)
+            for data in all_accounts_data.values()
+        )
+        change_today_pct = (total_change_today_abs / total_previous_equity * 100) if total_previous_equity != 0 else 0
+
+        # Calculate unique tickers across all accounts
+        all_tickers = set()
+        for position in combined_positions:
+            ticker = position.get('ticker')
+            if ticker and ticker not in ['USD Cash', 'Cryptocurrency']:
+                all_tickers.add(ticker)
+        total_tickers = len(all_tickers)
+
+        summary = {
+            "totalEquity": total_equity,
+            "changeTodayAbs": total_change_today_abs,
+            "changeTodayPct": change_today_pct,
+            "totalPnl": total_pnl,
+            "totalTickers": total_tickers,
+            "earnedPremium": total_earned_premium
+        }
+
+        # Save to cache
+        data_to_cache = {
+            "timestamp": datetime.now().isoformat(),
+            "data": {
+                "summary": summary,
+                "positions": combined_positions
+            }
+        }
+        with open(portfolio_cache_file, 'w') as f:
+            json.dump(data_to_cache, f, indent=2)
+
+        response_data = data_to_cache.get("data", {})
+        response_data['timestamp'] = data_to_cache.get("timestamp")
+        return response_data, 200
+
+    except Exception as e:
+        print(f"ERROR in get_data_for_all_accounts: {e}")
+        traceback.print_exc()
+        return {"error": f"An internal error occurred. Error: {e}"}, 500
+
 # --- API Endpoints ---
 
 @app.route('/api/portfolio/<string:account_name>', methods=['GET'])
@@ -623,7 +724,13 @@ def get_portfolio(account_name):
     """API endpoint to get portfolio data."""
     # Check for the 'force' query parameter
     force_refresh = request.args.get('force', 'false').lower() == 'true'
-    data, status_code = get_data_for_account(account_name, force_refresh=force_refresh)
+
+    # Special handling for "ALL" account type
+    if account_name.upper() == 'ALL':
+        data, status_code = get_data_for_all_accounts(force_refresh=force_refresh)
+    else:
+        data, status_code = get_data_for_account(account_name, force_refresh=force_refresh)
+
     return jsonify(data), status_code
 
 @app.route('/api/accounts', methods=['GET'])

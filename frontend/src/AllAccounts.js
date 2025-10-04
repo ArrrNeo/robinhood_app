@@ -131,15 +131,11 @@ const DraggableHeaderCell = ({ id, children, onClick, ...props }) => {
 
 function AllAccounts() {
     const [accounts] = useState(['INDIVIDUAL', 'ROTH_IRA', 'TRADITIONAL_IRA']);
-    const [portfolioData, setPortfolioData] = useState({});
+    const [allAccountsData, setAllAccountsData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    const [sortConfigs, setSortConfigs] = useState({
-        INDIVIDUAL: { key: 'marketValue', direction: 'descending' },
-        ROTH_IRA: { key: 'marketValue', direction: 'descending' },
-        TRADITIONAL_IRA: { key: 'marketValue', direction: 'descending' }
-    });
+    const [sortConfig, setSortConfig] = useState({ key: 'marketValue', direction: 'descending' });
     const [globalNotes, setGlobalNotes] = useState({});
     const settingsRef = useRef(null);
 
@@ -180,55 +176,27 @@ function AllAccounts() {
         }
     });
 
-    // Calculate combined summary metrics
+    // Summary comes directly from backend for ALL account
     const combinedSummary = useMemo(() => {
-        const allData = Object.values(portfolioData).filter(data => data && data.summary);
-        if (allData.length === 0) return null;
+        return allAccountsData?.summary || null;
+    }, [allAccountsData]);
 
-        const totalEquity = allData.reduce((sum, data) => sum + (data.summary.totalEquity || 0), 0);
-        const changeTodayAbs = allData.reduce((sum, data) => sum + (data.summary.changeTodayAbs || 0), 0);
-        const totalPnl = allData.reduce((sum, data) => sum + (data.summary.totalPnl || 0), 0);
+    // Group positions by account
+    const groupedPositions = useMemo(() => {
+        if (!allAccountsData || !allAccountsData.positions) return {};
 
-        // Calculate unique tickers across all accounts
-        const allTickers = new Set();
-        Object.values(portfolioData).forEach(data => {
-            if (data && data.positions) {
-                data.positions.forEach(pos => {
-                    // Exclude cash positions from ticker count
-                    if (pos.ticker && pos.ticker !== 'USD Cash') {
-                        allTickers.add(pos.ticker);
-                    }
-                });
+        const grouped = {};
+        allAccountsData.positions.forEach(position => {
+            const account = position.account;
+            if (!grouped[account]) {
+                grouped[account] = [];
             }
+            grouped[account].push(position);
         });
-        const totalTickers = allTickers.size;
 
-        // Calculate combined percentage for today's change
-        const totalPreviousEquity = allData.reduce((sum, data) => {
-            const todayChange = data.summary.changeTodayAbs || 0;
-            const currentEquity = data.summary.totalEquity || 0;
-            return sum + (currentEquity - todayChange);
-        }, 0);
-
-        const changeTodayPct = totalPreviousEquity !== 0 ? (changeTodayAbs / totalPreviousEquity) * 100 : 0;
-
-        return {
-            totalEquity,
-            changeTodayAbs,
-            changeTodayPct,
-            totalPnl,
-            totalTickers
-        };
-    }, [portfolioData]);
-
-    const getSortedPositions = (accountName) => {
-        const data = portfolioData[accountName];
-        if (!data || !data.positions) return [];
-
-        let sortableItems = [...data.positions];
-        const sortConfig = sortConfigs[accountName];
-        if (sortConfig.key) {
-            sortableItems.sort((a, b) => {
+        // Sort positions within each account
+        Object.keys(grouped).forEach(account => {
+            grouped[account].sort((a, b) => {
                 if (a[sortConfig.key] < b[sortConfig.key]) {
                     return sortConfig.direction === 'ascending' ? -1 : 1;
                 }
@@ -237,22 +205,17 @@ function AllAccounts() {
                 }
                 return 0;
             });
-        }
-        return sortableItems;
-    };
-
-    const requestSort = (accountName, key) => {
-        setSortConfigs(prev => {
-            const currentConfig = prev[accountName];
-            let direction = 'ascending';
-            if (currentConfig.key === key && currentConfig.direction === 'ascending') {
-                direction = 'descending';
-            }
-            return {
-                ...prev,
-                [accountName]: { key, direction }
-            };
         });
+
+        return grouped;
+    }, [allAccountsData, sortConfig]);
+
+    const requestSort = (key) => {
+        let direction = 'ascending';
+        if (sortConfig.key === key && sortConfig.direction === 'ascending') {
+            direction = 'descending';
+        }
+        setSortConfig({ key, direction });
     };
 
     useEffect(() => {
@@ -313,20 +276,15 @@ function AllAccounts() {
                 }
             }));
 
-            // Update all accounts that have this ticker
-            setPortfolioData(prevData => {
-                const updatedData = { ...prevData };
-                Object.keys(updatedData).forEach(account => {
-                    if (updatedData[account]?.positions) {
-                        updatedData[account] = {
-                            ...updatedData[account],
-                            positions: updatedData[account].positions.map(p =>
-                                p.ticker === ticker ? { ...p, [fieldName]: value } : p
-                            )
-                        };
-                    }
-                });
-                return updatedData;
+            // Update positions in allAccountsData
+            setAllAccountsData(prevData => {
+                if (!prevData) return prevData;
+                return {
+                    ...prevData,
+                    positions: prevData.positions.map(p =>
+                        p.ticker === ticker ? { ...p, [fieldName]: value } : p
+                    )
+                };
             });
 
         } catch (e) {
@@ -334,8 +292,8 @@ function AllAccounts() {
         }
     }, []);
 
-    const fetchDataForAccount = useCallback(async (accountName, force = false) => {
-        const cacheKey = `${config.cache.local_storage_keys.portfolio_data_prefix}${accountName}`;
+    const fetchAllData = useCallback(async (force = false) => {
+        const cacheKey = `${config.cache.local_storage_keys.portfolio_data_prefix}ALL`;
 
         // If not forcing a refresh, try to load from cache first
         if (!force) {
@@ -343,16 +301,24 @@ function AllAccounts() {
                 const cached = localStorage.getItem(cacheKey);
                 if (cached) {
                     const parsed = JSON.parse(cached);
-                    setPortfolioData(prev => ({ ...prev, [accountName]: parsed }));
+                    setAllAccountsData(parsed);
                 }
             } catch (e) {
                 console.error("Failed to read from cache", e);
             }
         }
 
-        try {
-            const portfolioUrl = `${config.api.base_url}${config.api.endpoints.portfolio}/${accountName}${force ? '?force=true' : ''}`;
+        setLoading(true);
+        setError(null);
 
+        try {
+            // Fetch global notes if forcing refresh
+            if (force) {
+                await fetchGlobalNotes();
+            }
+
+            // Fetch all accounts data with single API call
+            const portfolioUrl = `${config.api.base_url}${config.api.endpoints.portfolio}/ALL${force ? '?force=true' : ''}`;
             const portfolioRes = await fetch(portfolioUrl);
 
             if (!portfolioRes.ok) {
@@ -372,7 +338,7 @@ function AllAccounts() {
             }));
 
             const finalData = { ...portfolioResult, positions: positionsWithNotes };
-            setPortfolioData(prev => ({ ...prev, [accountName]: finalData }));
+            setAllAccountsData(finalData);
 
             // Save the fresh data to cache
             try {
@@ -382,27 +348,11 @@ function AllAccounts() {
             }
 
         } catch (e) {
-            setError(`Failed to fetch portfolio data for ${accountName}. Error: ${e.message}`);
-            console.error(e);
-        }
-    }, [globalNotes]);
-
-    const fetchAllData = useCallback(async (force = false) => {
-        setLoading(true);
-        setError(null);
-
-        try {
-            // Fetch global notes if forcing refresh
-            if (force) {
-                await fetchGlobalNotes();
-            }
-            await Promise.all(accounts.map(account => fetchDataForAccount(account, force)));
-        } catch (e) {
             setError(`Failed to fetch data for all accounts. Error: ${e.message}`);
         } finally {
             setLoading(false);
         }
-    }, [accounts, fetchDataForAccount, fetchGlobalNotes]);
+    }, [fetchGlobalNotes, globalNotes]);
 
     useEffect(() => {
         // Fetch global notes on mount
@@ -559,17 +509,15 @@ function AllAccounts() {
 
             {/* Individual Account Tables */}
             {accounts.map(accountName => {
-                const accountData = portfolioData[accountName];
-                const sortedPositions = getSortedPositions(accountName);
-                const sortConfig = sortConfigs[accountName];
+                const positions = groupedPositions[accountName] || [];
 
                 return (
                     <div key={accountName} className="bg-gray-800/50 border border-gray-700 rounded-lg overflow-x-auto mb-8">
                         <div className="flex justify-between items-center p-4 bg-gray-800 border-b border-gray-700">
                             <h4 className="text-lg font-semibold text-white capitalize">{accountName.replace(/_/g, ' ')}</h4>
                             <div className="text-sm text-gray-400">
-                                {accountData && accountData.timestamp ?
-                                    `Updated: ${new Date(accountData.timestamp).toLocaleString()}` :
+                                {allAccountsData && allAccountsData.timestamp ?
+                                    `Updated: ${new Date(allAccountsData.timestamp).toLocaleString()}` :
                                     'Loading...'
                                 }
                             </div>
@@ -583,7 +531,7 @@ function AllAccounts() {
                                                 {columnOrder.map(key => {
                                                     const { label, visible } = columns[key];
                                                     return visible ? (
-                                                        <DraggableHeaderCell key={key} id={key} className="p-4 text-sm font-semibold text-gray-400 tracking-wider" onClick={() => requestSort(accountName, key)}>
+                                                        <DraggableHeaderCell key={key} id={key} className="p-4 text-sm font-semibold text-gray-400 tracking-wider" onClick={() => requestSort(key)}>
                                                             {label}
                                                             {sortConfig.key === key && <SortIcon direction={sortConfig.direction} />}
                                                         </DraggableHeaderCell>
@@ -594,14 +542,14 @@ function AllAccounts() {
                                     </DndContext>
                                 </thead>
                                 <tbody>
-                                    {loading && !accountData ? (
+                                    {loading && !allAccountsData ? (
                                         Array.from({ length: 3 }).map((_, i) => <TableRowSkeleton key={i} columns={columns} columnOrder={columnOrder} />)
-                                    ) : sortedPositions.length > 0 ? (
-                                        sortedPositions.map(pos => renderPositionRow(pos, accountName))
+                                    ) : positions.length > 0 ? (
+                                        positions.map(pos => renderPositionRow(pos, accountName))
                                     ) : (
                                         <tr>
                                             <td colSpan={Object.values(columns).filter(c => c.visible).length} className="text-center p-8 text-gray-400">
-                                                {accountData ? 'No open positions found in this account.' : 'Loading...'}
+                                                {allAccountsData ? 'No open positions found in this account.' : 'Loading...'}
                                             </td>
                                         </tr>
                                     )}
