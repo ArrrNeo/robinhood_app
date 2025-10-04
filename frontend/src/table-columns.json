@@ -2,6 +2,7 @@
   "default_columns": {
     "ticker": { "label": "Ticker", "visible": true },
     "name": { "label": "Name", "visible": false },
+    "account": { "label": "Account", "visible": false },
     "marketValue": { "label": "Market Value", "visible": true },
     "quantity": { "label": "Quantity", "visible": true },
     "avgCost": { "label": "Avg Cost", "visible": true },
@@ -30,7 +31,7 @@
     "sector": { "label": "Sector", "visible": false }
   },
   "default_order": [
-    "ticker", "name", "marketValue", "quantity", "avgCost", "latest_price",
+    "ticker", "name", "account", "marketValue", "quantity", "avgCost", "latest_price",
     "unrealizedPnl", "returnPct", "intraday_percent_change",
     "portfolio_percent", "side", "type", "strike", "expiry",
     "pe_ratio", "high_52_weeks", "low_52_weeks", "position_52_week",

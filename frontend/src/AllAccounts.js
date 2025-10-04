@@ -130,7 +130,6 @@ const DraggableHeaderCell = ({ id, children, onClick, ...props }) => {
 // --- Main AllAccounts Component ---
 
 function AllAccounts() {
-    const [accounts] = useState(['INDIVIDUAL', 'ROTH_IRA', 'TRADITIONAL_IRA']);
     const [allAccountsData, setAllAccountsData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -150,9 +149,18 @@ function AllAccounts() {
                     parsed[key] = initialColumns[key];
                 }
             }
+            // For AllAccounts page, make account column visible by default
+            if (parsed.account) {
+                parsed.account = { ...parsed.account, visible: true };
+            }
             return parsed;
         } catch (e) {
-            return initialColumns;
+            // Make account column visible by default
+            const defaultCols = { ...initialColumns };
+            if (defaultCols.account) {
+                defaultCols.account = { ...defaultCols.account, visible: true };
+            }
+            return defaultCols;
         }
     });
 
@@ -181,33 +189,23 @@ function AllAccounts() {
         return allAccountsData?.summary || null;
     }, [allAccountsData]);
 
-    // Group positions by account
-    const groupedPositions = useMemo(() => {
-        if (!allAccountsData || !allAccountsData.positions) return {};
+    // Sort all positions globally
+    const sortedPositions = useMemo(() => {
+        if (!allAccountsData || !allAccountsData.positions) return [];
 
-        const grouped = {};
-        allAccountsData.positions.forEach(position => {
-            const account = position.account;
-            if (!grouped[account]) {
-                grouped[account] = [];
+        const positions = [...allAccountsData.positions];
+
+        positions.sort((a, b) => {
+            if (a[sortConfig.key] < b[sortConfig.key]) {
+                return sortConfig.direction === 'ascending' ? -1 : 1;
             }
-            grouped[account].push(position);
+            if (a[sortConfig.key] > b[sortConfig.key]) {
+                return sortConfig.direction === 'ascending' ? 1 : -1;
+            }
+            return 0;
         });
 
-        // Sort positions within each account
-        Object.keys(grouped).forEach(account => {
-            grouped[account].sort((a, b) => {
-                if (a[sortConfig.key] < b[sortConfig.key]) {
-                    return sortConfig.direction === 'ascending' ? -1 : 1;
-                }
-                if (a[sortConfig.key] > b[sortConfig.key]) {
-                    return sortConfig.direction === 'ascending' ? 1 : -1;
-                }
-                return 0;
-            });
-        });
-
-        return grouped;
+        return positions;
     }, [allAccountsData, sortConfig]);
 
     const requestSort = (key) => {
@@ -370,6 +368,7 @@ function AllAccounts() {
         const cells = {
             ticker: <td className="p-4 font-bold text-white">{pos.ticker}</td>,
             name: <td className="p-4 text-gray-300">{pos.name}</td>,
+            account: <td className="p-4 text-gray-300">{pos.account ? pos.account.replace(/_/g, ' ') : '-'}</td>,
             marketValue: <td className="p-4 font-mono">{formatCurrency(pos.marketValue)}</td>,
             quantity: <td className="p-4 font-mono">{isCash ? '-' : pos.quantity.toFixed(2)}</td>,
             avgCost: <td className="p-4 font-mono">{isCash ? '-' : formatCurrency(pos.avgCost)}</td>,
@@ -507,58 +506,52 @@ function AllAccounts() {
                 </div>
             </div>
 
-            {/* Individual Account Tables */}
-            {accounts.map(accountName => {
-                const positions = groupedPositions[accountName] || [];
-
-                return (
-                    <div key={accountName} className="bg-gray-800/50 border border-gray-700 rounded-lg overflow-x-auto mb-8">
-                        <div className="flex justify-between items-center p-4 bg-gray-800 border-b border-gray-700">
-                            <h4 className="text-lg font-semibold text-white capitalize">{accountName.replace(/_/g, ' ')}</h4>
-                            <div className="text-sm text-gray-400">
-                                {allAccountsData && allAccountsData.timestamp ?
-                                    `Updated: ${new Date(allAccountsData.timestamp).toLocaleString()}` :
-                                    'Loading...'
-                                }
-                            </div>
-                        </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left min-w-[1200px]">
-                                <thead className="bg-gray-800 border-b border-gray-700">
-                                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                                        <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
-                                            <tr>
-                                                {columnOrder.map(key => {
-                                                    const { label, visible } = columns[key];
-                                                    return visible ? (
-                                                        <DraggableHeaderCell key={key} id={key} className="p-4 text-sm font-semibold text-gray-400 tracking-wider" onClick={() => requestSort(key)}>
-                                                            {label}
-                                                            {sortConfig.key === key && <SortIcon direction={sortConfig.direction} />}
-                                                        </DraggableHeaderCell>
-                                                    ) : null
-                                                })}
-                                            </tr>
-                                        </SortableContext>
-                                    </DndContext>
-                                </thead>
-                                <tbody>
-                                    {loading && !allAccountsData ? (
-                                        Array.from({ length: 3 }).map((_, i) => <TableRowSkeleton key={i} columns={columns} columnOrder={columnOrder} />)
-                                    ) : positions.length > 0 ? (
-                                        positions.map(pos => renderPositionRow(pos, accountName))
-                                    ) : (
-                                        <tr>
-                                            <td colSpan={Object.values(columns).filter(c => c.visible).length} className="text-center p-8 text-gray-400">
-                                                {allAccountsData ? 'No open positions found in this account.' : 'Loading...'}
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
+            {/* Combined Positions Table */}
+            <div className="bg-gray-800/50 border border-gray-700 rounded-lg overflow-x-auto">
+                <div className="flex justify-between items-center p-4 bg-gray-800 border-b border-gray-700">
+                    <h4 className="text-lg font-semibold text-white">All Positions</h4>
+                    <div className="text-sm text-gray-400">
+                        {allAccountsData && allAccountsData.timestamp ?
+                            `Updated: ${new Date(allAccountsData.timestamp).toLocaleString()}` :
+                            'Loading...'
+                        }
                     </div>
-                );
-            })}
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left min-w-[1200px]">
+                        <thead className="bg-gray-800 border-b border-gray-700">
+                            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                                <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
+                                    <tr>
+                                        {columnOrder.map(key => {
+                                            const { label, visible } = columns[key];
+                                            return visible ? (
+                                                <DraggableHeaderCell key={key} id={key} className="p-4 text-sm font-semibold text-gray-400 tracking-wider" onClick={() => requestSort(key)}>
+                                                    {label}
+                                                    {sortConfig.key === key && <SortIcon direction={sortConfig.direction} />}
+                                                </DraggableHeaderCell>
+                                            ) : null
+                                        })}
+                                    </tr>
+                                </SortableContext>
+                            </DndContext>
+                        </thead>
+                        <tbody>
+                            {loading && !allAccountsData ? (
+                                Array.from({ length: 10 }).map((_, i) => <TableRowSkeleton key={i} columns={columns} columnOrder={columnOrder} />)
+                            ) : sortedPositions.length > 0 ? (
+                                sortedPositions.map(pos => renderPositionRow(pos, pos.account))
+                            ) : (
+                                <tr>
+                                    <td colSpan={Object.values(columns).filter(c => c.visible).length} className="text-center p-8 text-gray-400">
+                                        {allAccountsData ? 'No open positions found.' : 'Loading...'}
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     );
 }
