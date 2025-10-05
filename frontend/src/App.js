@@ -591,6 +591,7 @@ function App() {
         return {
             ticker: <td className="p-4 font-bold text-white">{pos.ticker}</td>,
             name: <td className="p-4 text-gray-300">{pos.name}</td>,
+            account: <td className="p-4 text-gray-300">-</td>,
             marketValue: <td className="p-4 font-mono">{formatCurrency(pos.marketValue)}</td>,
             quantity: <td className="p-4 font-mono">{isCash ? '-' : pos.quantity.toFixed(2)}</td>,
             avgCost: <td className="p-4 font-mono">{isCash ? '-' : formatCurrency(pos.avgCost)}</td>,

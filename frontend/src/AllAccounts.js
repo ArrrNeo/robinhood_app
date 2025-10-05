@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { CreateGroupModal, EditGroupModal, GroupRow, GroupAssignmentDropdown, useGroupManagement } from './GroupManager';
 import config from './config.json';
 import tableConfig from './table-columns.json';
 
@@ -23,6 +24,12 @@ const GearIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
         <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.438.995s.145.755.438.995l1.003.827c.424.35.534.954.26 1.431l-1.296-2.247a1.125 1.125 0 01-1.37.49l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.332.183-.582.495-.645.87l-.213 1.28c-.09.543-.56.94-1.11.94h-2.593c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.063-.374-.313-.686-.645-.87a6.52 6.52 0 01-.22-.127c-.324-.196-.72-.257-1.075-.124l-1.217.456a1.125 1.125 0 01-1.37-.49l-1.296-2.247a1.125 1.125 0 01.26-1.431l1.003-.827c.293-.24.438.613.438.995s-.145-.755-.438-.995l-1.003-.827a1.125 1.125 0 01-.26-1.431l1.296-2.247a1.125 1.125 0 011.37-.49l1.217.456c.355.133.75.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.645-.87l.213-1.281z" />
         <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+);
+
+const PlusIcon = () => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
     </svg>
 );
 
@@ -134,9 +141,24 @@ function AllAccounts() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [showCreateGroup, setShowCreateGroup] = useState(false);
+    const [showEditGroup, setShowEditGroup] = useState(false);
+    const [editingGroup, setEditingGroup] = useState(null);
     const [sortConfig, setSortConfig] = useState({ key: 'marketValue', direction: 'descending' });
     const [globalNotes, setGlobalNotes] = useState({});
     const settingsRef = useRef(null);
+
+    // Group management for ALL account
+    const {
+        groups,
+        groupMetrics,
+        createGroup,
+        updateGroup,
+        deleteGroup,
+        toggleGroupCollapse,
+        assignPositionToGroup,
+        organizePositionsByGroups
+    } = useGroupManagement('ALL');
 
     const initialColumns = tableConfig.default_columns;
 
@@ -189,24 +211,147 @@ function AllAccounts() {
         return allAccountsData?.summary || null;
     }, [allAccountsData]);
 
-    // Sort all positions globally
-    const sortedPositions = useMemo(() => {
-        if (!allAccountsData || !allAccountsData.positions) return [];
+    // Compute sorted data structure for rendering with group support
+    const sortedData = useMemo(() => {
+        if (!allAccountsData || !allAccountsData.positions) {
+            return { sortedUnits: [] };
+        }
 
-        const positions = [...allAccountsData.positions];
+        // Group-applicable sorting keys
+        const groupSortableKeys = ['marketValue', 'unrealizedPnl', 'returnPct', 'portfolio_percent'];
+        const isGroupSortable = groupSortableKeys.includes(sortConfig.key);
 
-        positions.sort((a, b) => {
-            if (a[sortConfig.key] < b[sortConfig.key]) {
+        // Organize positions into groups
+        const { groupedPositions, ungroupedPositions } = organizePositionsByGroups(allAccountsData.positions);
+
+        if (!sortConfig.key || !isGroupSortable) {
+            // For non-group-applicable keys or no sorting, sort positions individually within groups
+            const sortedUnits = [];
+
+            // Add groups (positions sorted within each group)
+            Object.entries(groups.groups).forEach(([groupId, group]) => {
+                let positions = [...(groupedPositions[groupId] || [])];
+                if (sortConfig.key) {
+                    positions.sort((a, b) => {
+                        if (a[sortConfig.key] < b[sortConfig.key]) {
+                            return sortConfig.direction === 'ascending' ? -1 : 1;
+                        }
+                        if (a[sortConfig.key] > b[sortConfig.key]) {
+                            return sortConfig.direction === 'ascending' ? 1 : -1;
+                        }
+                        return 0;
+                    });
+                }
+                if (positions.length > 0) {
+                    sortedUnits.push({
+                        type: 'group',
+                        groupId,
+                        group,
+                        positions
+                    });
+                }
+            });
+
+            // Add ungrouped positions
+            let sortedUngrouped = [...ungroupedPositions];
+            if (sortConfig.key) {
+                sortedUngrouped.sort((a, b) => {
+                    if (a[sortConfig.key] < b[sortConfig.key]) {
+                        return sortConfig.direction === 'ascending' ? -1 : 1;
+                    }
+                    if (a[sortConfig.key] > b[sortConfig.key]) {
+                        return sortConfig.direction === 'ascending' ? 1 : -1;
+                    }
+                    return 0;
+                });
+            }
+            sortedUngrouped.forEach(position => {
+                sortedUnits.push({
+                    type: 'position',
+                    position
+                });
+            });
+
+            return { sortedUnits };
+        }
+
+        // For group-applicable keys, create sortable units (groups + ungrouped positions)
+        const sortableUnits = [];
+
+        // Add each group as a unit with its aggregate value
+        Object.entries(groups.groups).forEach(([groupId, group]) => {
+            let positions = [...(groupedPositions[groupId] || [])];
+            if (positions.length > 0) {
+                const metrics = groupMetrics[groupId];
+                let sortValue = 0;
+
+                // Calculate the appropriate sort value based on the key
+                switch(sortConfig.key) {
+                    case 'marketValue':
+                        sortValue = metrics?.total_market_value || 0;
+                        break;
+                    case 'unrealizedPnl':
+                        sortValue = metrics?.total_pnl || 0;
+                        break;
+                    case 'returnPct':
+                        const totalMarketValue = metrics?.total_market_value || 0;
+                        const totalPnl = metrics?.total_pnl || 0;
+                        const totalCost = totalMarketValue - totalPnl;
+                        sortValue = totalCost !== 0 ? (totalPnl / totalCost) * 100 : 0;
+                        break;
+                    case 'portfolio_percent':
+                        const totalPortfolioValue = allAccountsData?.summary?.totalEquity || 0;
+                        const groupMarketValue = metrics?.total_market_value || 0;
+                        sortValue = totalPortfolioValue > 0 ? (groupMarketValue / totalPortfolioValue) * 100 : 0;
+                        break;
+                    default:
+                        sortValue = 0;
+                }
+
+                // Sort positions within the group by the same key
+                positions.sort((a, b) => {
+                    if (a[sortConfig.key] < b[sortConfig.key]) {
+                        return sortConfig.direction === 'ascending' ? -1 : 1;
+                    }
+                    if (a[sortConfig.key] > b[sortConfig.key]) {
+                        return sortConfig.direction === 'ascending' ? 1 : -1;
+                    }
+                    return 0;
+                });
+
+                sortableUnits.push({
+                    type: 'group',
+                    groupId,
+                    group,
+                    positions,
+                    sortValue
+                });
+            }
+        });
+
+        // Add ungrouped positions as individual units
+        ungroupedPositions.forEach(position => {
+            sortableUnits.push({
+                type: 'position',
+                position,
+                sortValue: position[sortConfig.key] || 0
+            });
+        });
+
+        // Sort the units
+        sortableUnits.sort((a, b) => {
+            if (a.sortValue < b.sortValue) {
                 return sortConfig.direction === 'ascending' ? -1 : 1;
             }
-            if (a[sortConfig.key] > b[sortConfig.key]) {
+            if (a.sortValue > b.sortValue) {
                 return sortConfig.direction === 'ascending' ? 1 : -1;
             }
             return 0;
         });
 
-        return positions;
-    }, [allAccountsData, sortConfig]);
+        // Return sorted units as-is for interleaved rendering
+        return { sortedUnits: sortableUnits };
+    }, [allAccountsData, sortConfig, groups, groupMetrics, organizePositionsByGroups]);
 
     const requestSort = (key) => {
         let direction = 'ascending';
@@ -299,7 +444,23 @@ function AllAccounts() {
                 const cached = localStorage.getItem(cacheKey);
                 if (cached) {
                     const parsed = JSON.parse(cached);
+                    // Ensure cached positions have unique IDs
+                    if (parsed.positions) {
+                        parsed.positions = parsed.positions.map(pos => {
+                            if (!pos.id) {
+                                const isOption = pos.type === 'option';
+                                const account = pos.account || 'UNKNOWN';
+                                const positionId = isOption
+                                    ? `${pos.ticker}-${pos.expiry}-${pos.strike}-${pos.option_type}-${account}`
+                                    : `${pos.ticker}-${account}`;
+                                return { ...pos, id: positionId };
+                            }
+                            return pos;
+                        });
+                    }
                     setAllAccountsData(parsed);
+                    setLoading(false);
+                    return; // Exit early if using cache
                 }
             } catch (e) {
                 console.error("Failed to read from cache", e);
@@ -310,11 +471,6 @@ function AllAccounts() {
         setError(null);
 
         try {
-            // Fetch global notes if forcing refresh
-            if (force) {
-                await fetchGlobalNotes();
-            }
-
             // Fetch all accounts data with single API call
             const portfolioUrl = `${config.api.base_url}${config.api.endpoints.portfolio}/ALL${force ? '?force=true' : ''}`;
             const portfolioRes = await fetch(portfolioUrl);
@@ -328,14 +484,24 @@ function AllAccounts() {
 
             if (portfolioResult.error) throw new Error(portfolioResult.error);
 
-            // Merge positions with global notes
-            const positionsWithNotes = portfolioResult.positions.map(pos => ({
-                ...pos,
-                note: globalNotes[pos.ticker]?.note || '',
-                comment: globalNotes[pos.ticker]?.comment || ''
-            }));
+            // Merge positions with global notes and add position IDs
+            // For ALL page, make IDs unique by including account name
+            const positionsWithNotesAndIds = portfolioResult.positions.map(pos => {
+                const isOption = pos.type === 'option';
+                const account = pos.account || 'UNKNOWN';
+                const positionId = isOption
+                    ? `${pos.ticker}-${pos.expiry}-${pos.strike}-${pos.option_type}-${account}`
+                    : `${pos.ticker}-${account}`;
 
-            const finalData = { ...portfolioResult, positions: positionsWithNotes };
+                return {
+                    ...pos,
+                    id: positionId,  // Add unique ID for group matching
+                    note: globalNotes[pos.ticker]?.note || '',
+                    comment: globalNotes[pos.ticker]?.comment || ''
+                };
+            });
+
+            const finalData = { ...portfolioResult, positions: positionsWithNotesAndIds };
             setAllAccountsData(finalData);
 
             // Save the fresh data to cache
@@ -350,22 +516,78 @@ function AllAccounts() {
         } finally {
             setLoading(false);
         }
-    }, [fetchGlobalNotes, globalNotes]);
+    }, [globalNotes]);
 
     useEffect(() => {
-        // Fetch global notes on mount
+        // Fetch global notes and data once on mount
         fetchGlobalNotes();
-    }, [fetchGlobalNotes]);
-
-    useEffect(() => {
         fetchAllData();
-    }, [fetchAllData]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Only run on mount
 
-    const renderPositionRow = (pos, accountName) => {
+    // Group modal handlers
+    const handleCreateGroup = async (groupData) => {
+        await createGroup(groupData);
+        setShowCreateGroup(false);
+    };
+
+    const handleEditGroup = (groupId, group) => {
+        setEditingGroup({ groupId, group });
+        setShowEditGroup(true);
+    };
+
+    const handleUpdateGroup = async (groupData) => {
+        if (editingGroup) {
+            await updateGroup(editingGroup.groupId, groupData);
+            setShowEditGroup(false);
+            setEditingGroup(null);
+        }
+    };
+
+    // Custom assignment handler for ALL page
+    // When assigning a position, also assign all positions with the same ticker
+    const handleAssignPosition = useCallback(async (positionId, targetGroupId) => {
+        if (!allAccountsData || !allAccountsData.positions) return;
+
+        // Find the position being assigned
+        const assignedPosition = allAccountsData.positions.find(p => p.id === positionId);
+        if (!assignedPosition) return;
+
+        // Find all positions with the same ticker
+        const ticker = assignedPosition.ticker;
+        const isOption = assignedPosition.type === 'option';
+
+        let relatedPositionIds;
+        if (isOption) {
+            // For options, match ticker, expiry, strike, and option_type across all accounts
+            relatedPositionIds = allAccountsData.positions
+                .filter(p =>
+                    p.ticker === ticker &&
+                    p.type === 'option' &&
+                    p.expiry === assignedPosition.expiry &&
+                    p.strike === assignedPosition.strike &&
+                    p.option_type === assignedPosition.option_type
+                )
+                .map(p => p.id);
+        } else {
+            // For stocks, match just the ticker across all accounts
+            relatedPositionIds = allAccountsData.positions
+                .filter(p => p.ticker === ticker && p.type !== 'option')
+                .map(p => p.id);
+        }
+
+        // Assign all related positions to the group (in parallel for better performance)
+        await Promise.all(
+            relatedPositionIds.map(id => assignPositionToGroup(id, targetGroupId))
+        );
+    }, [allAccountsData, assignPositionToGroup]);
+
+    // Generate cells for a position (used by both renderPositionRow and GroupRow)
+    const generatePositionCells = useCallback((pos) => {
         const isOption = pos.type === 'option';
         const isCash = pos.type === 'cash';
 
-        const cells = {
+        return {
             ticker: <td className="p-4 font-bold text-white">{pos.ticker}</td>,
             name: <td className="p-4 text-gray-300">{pos.name}</td>,
             account: <td className="p-4 text-gray-300">{pos.account ? pos.account.replace(/_/g, ' ') : '-'}</td>,
@@ -391,22 +613,29 @@ function AllAccounts() {
             three_month_change: <td className="p-4 font-mono"><PctIndicator value={pos.three_month_change} /></td>,
             one_year_change: <td className="p-4 font-mono"><PctIndicator value={pos.one_year_change} /></td>,
             yearly_revenue_change: <td className="p-4 font-mono"><PctIndicator value={pos.yearly_revenue_change} /></td>,
-            notes: <td className="p-4 font-mono"><EditableNoteCell ticker={pos.ticker} initialNote={pos.note} onSave={(ticker, fieldName, value) => handleSaveCell(ticker, fieldName, value, accountName)} /></td>,
-            group: <td className="p-4 text-gray-300">{pos.group || '-'}</td>,
-            comment: <td className="p-4 font-mono"><EditableIndustryCell ticker={pos.ticker} initialIndustry={pos.comment} onSave={(ticker, fieldName, value) => handleSaveCell(ticker, fieldName, value, accountName)} /></td>,
+            notes: <td className="p-4 font-mono"><EditableNoteCell ticker={pos.ticker} initialNote={pos.note} onSave={handleSaveCell} /></td>,
+            group: <td className="p-4">
+                <GroupAssignmentDropdown position={pos} groups={groups} onAssign={handleAssignPosition} />
+            </td>,
+            comment: <td className="p-4 font-mono"><EditableIndustryCell ticker={pos.ticker} initialIndustry={pos.comment} onSave={handleSaveCell} /></td>,
             industry: <td className="p-4 text-gray-300">{pos.industry}</td>,
             sector: <td className="p-4 text-gray-300">{pos.sector}</td>
         };
+    }, [groups, handleAssignPosition, handleSaveCell]);
+
+    // Render a full position row
+    const renderPositionRow = useCallback((pos) => {
+        const cells = generatePositionCells(pos);
 
         return (
-            <tr key={`${accountName}-${isOption ? `${pos.ticker}-${pos.expiry}-${pos.strike}-${pos.option_type}` : pos.ticker}`} className="border-b border-gray-700 last:border-b-0 hover:bg-gray-700/50 transition-colors">
+            <tr key={pos.id || pos.ticker} className="border-b border-gray-700 last:border-b-0 hover:bg-gray-700/50 transition-colors">
                 {columnOrder.map(key => {
                     const { visible } = columns[key];
                     return visible ? React.cloneElement(cells[key], { key }) : null
                 })}
             </tr>
         );
-    };
+    }, [generatePositionCells, columnOrder, columns]);
 
     const sensors = useSensors(
         useSensor(PointerSensor),
@@ -475,6 +704,14 @@ function AllAccounts() {
             <div className="flex justify-between items-center mb-6">
                 <h3 className="text-lg font-semibold text-white">Account Positions</h3>
                 <div className="flex items-center space-x-2">
+                    <button
+                        onClick={() => setShowCreateGroup(true)}
+                        className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
+                        title="Create New Group"
+                    >
+                        <PlusIcon />
+                        <span>Create Group</span>
+                    </button>
                     <button onClick={() => fetchAllData(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" title="Force Refresh All">
                         <RefreshIcon />
                     </button>
@@ -539,8 +776,32 @@ function AllAccounts() {
                         <tbody>
                             {loading && !allAccountsData ? (
                                 Array.from({ length: 10 }).map((_, i) => <TableRowSkeleton key={i} columns={columns} columnOrder={columnOrder} />)
-                            ) : sortedPositions.length > 0 ? (
-                                sortedPositions.map(pos => renderPositionRow(pos, pos.account))
+                            ) : sortedData.sortedUnits && sortedData.sortedUnits.length > 0 ? (
+                                <>
+                                    {/* Render sorted units (groups and positions interleaved) */}
+                                    {sortedData.sortedUnits.map((unit, index) => {
+                                        if (unit.type === 'group') {
+                                            return (
+                                                <GroupRow
+                                                    key={unit.groupId}
+                                                    group={unit.group}
+                                                    groupId={unit.groupId}
+                                                    metrics={groupMetrics[unit.groupId]}
+                                                    positions={unit.positions}
+                                                    columns={columns}
+                                                    columnOrder={columnOrder}
+                                                    onToggleCollapse={toggleGroupCollapse}
+                                                    renderPositionCells={generatePositionCells}
+                                                    totalPortfolioValue={allAccountsData?.summary?.totalEquity || 0}
+                                                    onEdit={handleEditGroup}
+                                                    onDelete={deleteGroup}
+                                                />
+                                            );
+                                        } else {
+                                            return renderPositionRow(unit.position);
+                                        }
+                                    })}
+                                </>
                             ) : (
                                 <tr>
                                     <td colSpan={Object.values(columns).filter(c => c.visible).length} className="text-center p-8 text-gray-400">
@@ -552,6 +813,22 @@ function AllAccounts() {
                     </table>
                 </div>
             </div>
+
+            {/* Group Modals */}
+            <CreateGroupModal
+                isOpen={showCreateGroup}
+                onClose={() => setShowCreateGroup(false)}
+                onSubmit={handleCreateGroup}
+            />
+            <EditGroupModal
+                isOpen={showEditGroup}
+                onClose={() => {
+                    setShowEditGroup(false);
+                    setEditingGroup(null);
+                }}
+                onSubmit={handleUpdateGroup}
+                group={editingGroup?.group}
+            />
         </div>
     );
 }

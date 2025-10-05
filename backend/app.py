@@ -976,10 +976,18 @@ def calculate_group_metrics(positions, group_position_ids):
 
 def get_position_id(position):
     """Generate a unique ID for a position"""
+    # For ALL page, include account name to make IDs unique across accounts
+    account = position.get('account', '')
+
     if position.get('type') == 'option':
-        return f"{position['ticker']}-{position.get('option_type', '')}-{position.get('strike', '')}-{position.get('expiry', '')}"
+        base_id = f"{position['ticker']}-{position.get('expiry', '')}-{position.get('strike', '')}-{position.get('option_type', '')}"
     else:
-        return position.get('ticker', '')
+        base_id = position.get('ticker', '')
+
+    # If account is present, append it to make ID unique
+    if account:
+        return f"{base_id}-{account}"
+    return base_id
 
 # --- Groups API Endpoints ---
 @app.route('/api/groups/<string:account_name>', methods=['GET'])
@@ -1130,7 +1138,11 @@ def get_group_metrics(account_name):
     """Calculate and return metrics for all groups"""
     try:
         # Get portfolio data
-        portfolio_data, status_code = get_data_for_account(account_name)
+        if account_name.upper() == 'ALL':
+            portfolio_data, status_code = get_data_for_all_accounts()
+        else:
+            portfolio_data, status_code = get_data_for_account(account_name)
+
         if status_code != 200:
             return jsonify({"error": "Failed to get portfolio data"}), status_code
 
