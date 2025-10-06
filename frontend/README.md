@@ -71,6 +71,6 @@ This section has moved here: [https://facebook.github.io/create-react-app/docs/t
 
 
 ### TODO
+1. % portfolio in all account page, for a given stock, should reflect % of that stock held in all accounts to total equity
 1. add spy day's change % as summary card.
 2. rename day's P/L to day's change
-3. % portfolio in all account page should reflect % of cumilative portfolio

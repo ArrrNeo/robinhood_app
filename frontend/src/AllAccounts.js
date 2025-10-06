@@ -462,10 +462,27 @@ function AllAccounts() {
                         parsed.positions = parsed.positions.map(pos => {
                             if (!pos.id) {
                                 const isOption = pos.type === 'option';
-                                const account = pos.account || 'UNKNOWN';
-                                const positionId = isOption
-                                    ? `${pos.ticker}-${pos.expiry}-${pos.strike}-${pos.option_type}-${account}`
-                                    : `${pos.ticker}-${account}`;
+                                const isCash = pos.type === 'cash';
+                                const accountValue = pos.account;
+
+                                // For merged stocks, account is an array - use just ticker as ID
+                                // For non-merged positions, account is a string - append account to ID
+                                let positionId;
+                                if (Array.isArray(accountValue)) {
+                                    // Merged stock - use just ticker
+                                    positionId = pos.ticker;
+                                } else {
+                                    // Non-merged position - include account in ID
+                                    const account = accountValue || 'UNKNOWN';
+                                    if (isOption) {
+                                        positionId = `${pos.ticker}-${pos.expiry}-${pos.strike}-${pos.option_type}-${account}`;
+                                    } else if (isCash) {
+                                        positionId = `${pos.ticker}-${account}`;
+                                    } else {
+                                        // Stock in single account
+                                        positionId = `${pos.ticker}-${account}`;
+                                    }
+                                }
                                 return { ...pos, id: positionId };
                             }
                             return pos;
@@ -498,13 +515,31 @@ function AllAccounts() {
             if (portfolioResult.error) throw new Error(portfolioResult.error);
 
             // Merge positions with global notes and add position IDs
-            // For ALL page, make IDs unique by including account name
+            // For ALL page, merged stocks have array account (ID = ticker)
+            // Non-merged positions have string account (ID includes account)
             const positionsWithNotesAndIds = portfolioResult.positions.map(pos => {
                 const isOption = pos.type === 'option';
-                const account = pos.account || 'UNKNOWN';
-                const positionId = isOption
-                    ? `${pos.ticker}-${pos.expiry}-${pos.strike}-${pos.option_type}-${account}`
-                    : `${pos.ticker}-${account}`;
+                const isCash = pos.type === 'cash';
+                const accountValue = pos.account;
+
+                // For merged stocks, account is an array - use just ticker as ID
+                // For non-merged positions, account is a string - append account to ID
+                let positionId;
+                if (Array.isArray(accountValue)) {
+                    // Merged stock - use just ticker
+                    positionId = pos.ticker;
+                } else {
+                    // Non-merged position - include account in ID
+                    const account = accountValue || 'UNKNOWN';
+                    if (isOption) {
+                        positionId = `${pos.ticker}-${pos.expiry}-${pos.strike}-${pos.option_type}-${account}`;
+                    } else if (isCash) {
+                        positionId = `${pos.ticker}-${account}`;
+                    } else {
+                        // Stock in single account
+                        positionId = `${pos.ticker}-${account}`;
+                    }
+                }
 
                 return {
                     ...pos,
@@ -581,7 +616,8 @@ function AllAccounts() {
     };
 
     // Custom assignment handler for ALL page
-    // When assigning a position, also assign all positions with the same ticker
+    // For merged stocks (account is array), assign just that position
+    // For non-merged positions, also assign all positions with the same ticker
     const handleAssignPosition = useCallback(async (positionId, targetGroupId) => {
         if (!allAccountsData || !allAccountsData.positions) return;
 
@@ -589,7 +625,13 @@ function AllAccounts() {
         const assignedPosition = allAccountsData.positions.find(p => p.id === positionId);
         if (!assignedPosition) return;
 
-        // Find all positions with the same ticker
+        // If position is already merged (account is array), just assign it directly
+        if (Array.isArray(assignedPosition.account)) {
+            await assignPositionToGroup(positionId, targetGroupId);
+            return;
+        }
+
+        // For non-merged positions, find all related positions
         const ticker = assignedPosition.ticker;
         const isOption = assignedPosition.type === 'option';
 
@@ -626,7 +668,11 @@ function AllAccounts() {
         return {
             ticker: <td className="p-4 font-bold text-white">{pos.ticker}</td>,
             name: <td className="p-4 text-gray-300">{pos.name}</td>,
-            account: <td className="p-4 text-gray-300">{pos.account ? pos.account.replace(/_/g, ' ') : '-'}</td>,
+            account: <td className="p-4 text-gray-300">{
+                Array.isArray(pos.account)
+                    ? pos.account.map(acc => acc.replace(/_/g, ' ')).join(', ')
+                    : (pos.account ? pos.account.replace(/_/g, ' ') : '-')
+            }</td>,
             marketValue: <td className="p-4 font-mono">{formatCurrency(pos.marketValue)}</td>,
             quantity: <td className="p-4 font-mono">{isCash ? '-' : pos.quantity.toFixed(2)}</td>,
             avgCost: <td className="p-4 font-mono">{isCash ? '-' : formatCurrency(pos.avgCost)}</td>,
@@ -692,113 +738,117 @@ function AllAccounts() {
     };
 
     return (
-        <div className="space-y-8">
-            {error && <div className="bg-red-800/50 text-red-200 p-4 rounded-lg mb-6 border border-red-700">{error}</div>}
-            {loginMessage && (
-                <div className={`p-4 rounded-lg mb-6 border ${
-                    loginMessage.type === 'success'
-                        ? 'bg-green-800/50 text-green-200 border-green-700'
-                        : 'bg-red-800/50 text-red-200 border-red-700'
-                }`}>
-                    {loginMessage.text}
-                </div>
-            )}
+        <div className="flex flex-col h-screen">
+            {/* Fixed Section: Header, Messages, Summary Cards, and Controls */}
+            <div className="flex-none">
+                {error && <div className="bg-red-800/50 text-red-200 p-4 rounded-lg mb-6 border border-red-700">{error}</div>}
+                {loginMessage && (
+                    <div className={`p-4 rounded-lg mb-6 border ${
+                        loginMessage.type === 'success'
+                            ? 'bg-green-800/50 text-green-200 border-green-700'
+                            : 'bg-red-800/50 text-red-200 border-red-700'
+                    }`}>
+                        {loginMessage.text}
+                    </div>
+                )}
 
-            <header className="mb-8">
-                <h2 className="text-2xl font-bold text-white">All Accounts Overview</h2>
-                <p className="text-gray-400">Combined portfolio view across all account types</p>
-            </header>
+                <header className="mb-8">
+                    <h2 className="text-2xl font-bold text-white">All Accounts Overview</h2>
+                    <p className="text-gray-400">Combined portfolio view across all account types</p>
+                </header>
 
-            {/* Combined Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
-                {loading && !combinedSummary ? (
-                    [...Array(5)].map((_, i) => <MetricCardSkeleton key={i} />)
-                ) : combinedSummary ? (
-                    <>
-                        <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
-                            <h3 className="text-gray-400 text-sm mb-2">Total Equity</h3>
-                            <p className="text-3xl font-semibold text-white">{formatCurrency(combinedSummary.totalEquity)}</p>
-                        </div>
-                        <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
-                            <h3 className="text-gray-400 text-sm mb-2">Day's P/L</h3>
-                            <p className={`text-3xl font-semibold ${combinedSummary.changeTodayAbs >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                {formatCurrency(combinedSummary.changeTodayAbs, true)}
-                            </p>
-                        </div>
-                        <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
-                            <h3 className="text-gray-400 text-sm mb-2">Total P/L</h3>
-                            <p className={`text-3xl font-semibold ${combinedSummary.totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                {formatCurrency(combinedSummary.totalPnl, true)}
-                            </p>
-                        </div>
-                        <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
-                            <h3 className="text-gray-400 text-sm mb-2">Day's P/L %</h3>
-                            <p className={`text-3xl font-semibold ${combinedSummary.changeTodayPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                {formatPercent(combinedSummary.changeTodayPct)}
-                            </p>
-                        </div>
-                        <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
-                            <h3 className="text-gray-400 text-sm mb-2">Total Tickers</h3>
-                            <p className="text-3xl font-semibold text-white">{combinedSummary.totalTickers}</p>
-                        </div>
-                    </>
-                ) : null}
-            </div>
-
-            {/* Global Controls */}
-            <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-semibold text-white">Positions</h3>
-                <div className="flex items-center space-x-2">
-                    <button
-                        onClick={() => setShowCreateGroup(true)}
-                        className="flex items-center space-x-2 px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
-                        title="Create Group"
-                    >
-                        <PlusIcon />
-                        <span>Create Group</span>
-                    </button>
-                    <button
-                        onClick={handleReLogin}
-                        disabled={loginLoading}
-                        className="p-2 rounded-full hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Re-login to Robinhood"
-                    >
-                        <LoginIcon />
-                    </button>
-                    <button onClick={() => fetchAllData(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" title="Force Refresh">
-                        <RefreshIcon />
-                    </button>
-                    <div className="relative" ref={settingsRef}>
-                        <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="p-2 rounded-full hover:bg-gray-700 transition-colors">
-                            <GearIcon />
-                        </button>
-                        {isSettingsOpen && (
-                            <div className="absolute right-0 mt-2 w-56 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-20">
-                                <div className="p-3 border-b border-gray-600">
-                                    <h4 className="font-semibold text-white">Display Columns</h4>
-                                </div>
-                                <div className="p-2 max-h-96 overflow-y-auto">
-                                    {Object.entries(columns).map(([key, { label, visible }]) => (
-                                        <label key={key} className="flex items-center space-x-3 px-3 py-2 cursor-pointer hover:bg-gray-700 rounded-md">
-                                            <input
-                                                type="checkbox"
-                                                checked={visible}
-                                                onChange={() => handleColumnToggle(key)}
-                                                className="form-checkbox h-4 w-4 bg-gray-700 border-gray-500 rounded text-blue-500 focus:ring-offset-0 focus:ring-2 focus:ring-blue-500"
-                                            />
-                                            <span className="text-gray-300 select-none">{label}</span>
-                                        </label>
-                                    ))}
-                                </div>
+                {/* Combined Summary Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+                    {loading && !combinedSummary ? (
+                        [...Array(5)].map((_, i) => <MetricCardSkeleton key={i} />)
+                    ) : combinedSummary ? (
+                        <>
+                            <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                <h3 className="text-gray-400 text-sm mb-2">Total Equity</h3>
+                                <p className="text-3xl font-semibold text-white">{formatCurrency(combinedSummary.totalEquity)}</p>
                             </div>
-                        )}
+                            <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                <h3 className="text-gray-400 text-sm mb-2">Day's P/L</h3>
+                                <p className={`text-3xl font-semibold ${combinedSummary.changeTodayAbs >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {formatCurrency(combinedSummary.changeTodayAbs, true)}
+                                </p>
+                            </div>
+                            <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                <h3 className="text-gray-400 text-sm mb-2">Total P/L</h3>
+                                <p className={`text-3xl font-semibold ${combinedSummary.totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {formatCurrency(combinedSummary.totalPnl, true)}
+                                </p>
+                            </div>
+                            <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                <h3 className="text-gray-400 text-sm mb-2">Day's P/L %</h3>
+                                <p className={`text-3xl font-semibold ${combinedSummary.changeTodayPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {formatPercent(combinedSummary.changeTodayPct)}
+                                </p>
+                            </div>
+                            <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                <h3 className="text-gray-400 text-sm mb-2">Total Tickers</h3>
+                                <p className="text-3xl font-semibold text-white">{combinedSummary.totalTickers}</p>
+                            </div>
+                        </>
+                    ) : null}
+                </div>
+
+                {/* Global Controls */}
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-lg font-semibold text-white">Positions</h3>
+                    <div className="flex items-center space-x-2">
+                        <button
+                            onClick={() => setShowCreateGroup(true)}
+                            className="flex items-center space-x-2 px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
+                            title="Create Group"
+                        >
+                            <PlusIcon />
+                            <span>Create Group</span>
+                        </button>
+                        <button
+                            onClick={handleReLogin}
+                            disabled={loginLoading}
+                            className="p-2 rounded-full hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Re-login to Robinhood"
+                        >
+                            <LoginIcon />
+                        </button>
+                        <button onClick={() => fetchAllData(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" title="Force Refresh">
+                            <RefreshIcon />
+                        </button>
+                        <div className="relative" ref={settingsRef}>
+                            <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="p-2 rounded-full hover:bg-gray-700 transition-colors">
+                                <GearIcon />
+                            </button>
+                            {isSettingsOpen && (
+                                <div className="absolute right-0 mt-2 w-56 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-20">
+                                    <div className="p-3 border-b border-gray-600">
+                                        <h4 className="font-semibold text-white">Display Columns</h4>
+                                    </div>
+                                    <div className="p-2 max-h-96 overflow-y-auto">
+                                        {Object.entries(columns).map(([key, { label, visible }]) => (
+                                            <label key={key} className="flex items-center space-x-3 px-3 py-2 cursor-pointer hover:bg-gray-700 rounded-md">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={visible}
+                                                    onChange={() => handleColumnToggle(key)}
+                                                    className="form-checkbox h-4 w-4 bg-gray-700 border-gray-500 rounded text-blue-500 focus:ring-offset-0 focus:ring-2 focus:ring-blue-500"
+                                                />
+                                                <span className="text-gray-300 select-none">{label}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* Combined Positions Table */}
-            <div className="bg-gray-800/50 border border-gray-700 rounded-lg overflow-x-auto">
-                <div className="flex justify-between items-center p-4 bg-gray-800 border-b border-gray-700">
+            {/* Scrollable Section: Table */}
+            <div className="flex-1 flex flex-col min-h-0 bg-gray-800/50 border border-gray-700 rounded-lg">
+                {/* Fixed Title Bar */}
+                <div className="flex-none flex justify-between items-center p-4 bg-gray-800 border-b border-gray-700">
                     <h4 className="text-lg font-semibold text-white">All Positions</h4>
                     <div className="text-sm text-gray-400">
                         {allAccountsData && allAccountsData.timestamp ?
@@ -807,9 +857,11 @@ function AllAccounts() {
                         }
                     </div>
                 </div>
-                <div className="overflow-x-auto">
+
+                {/* Scrollable Table with Sticky Header */}
+                <div className="flex-1 overflow-auto">
                     <table className="w-full text-left min-w-[1200px]">
-                        <thead className="bg-gray-800 border-b border-gray-700">
+                        <thead className="bg-gray-800 border-b border-gray-700 sticky top-0 z-10">
                             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                                 <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
                                     <tr>

@@ -667,6 +667,77 @@ def get_data_for_all_accounts(force_refresh=False):
                 position_with_account = {**position, 'account': account_name}
                 combined_positions.append(position_with_account)
 
+        # Merge stock and cash positions with same ticker across accounts
+        merged_positions = {}
+        for position in combined_positions:
+            ticker = position.get('ticker')
+            position_type = position.get('type', 'stock')
+
+            # Only merge stocks and cash - don't merge options
+            if position_type == 'option' or not ticker:
+                # Don't merge options - keep them separate per account
+                # Create unique key for non-mergeable positions
+                account = position.get('account')
+                key = f"{ticker}-{position.get('expiry')}-{position.get('strike')}-{position.get('option_type')}-{account}"
+                merged_positions[key] = position
+                continue
+
+            # Merge stocks and cash with same ticker
+            if ticker not in merged_positions:
+                # First occurrence of this ticker - initialize with accounts as list
+                merged_positions[ticker] = {**position, 'account': [position.get('account')]}
+            else:
+                # Merge this position with existing
+                existing = merged_positions[ticker]
+
+                # Add account to list if not already there
+                if isinstance(existing['account'], list):
+                    if position.get('account') not in existing['account']:
+                        existing['account'].append(position.get('account'))
+                else:
+                    existing['account'] = [existing['account'], position.get('account')]
+
+                # Merge quantities
+                existing_qty = existing.get('quantity', 0)
+                new_qty = position.get('quantity', 0)
+                total_qty = existing_qty + new_qty
+
+                # Calculate weighted average cost
+                existing_cost = existing.get('avgCost', 0)
+                new_cost = position.get('avgCost', 0)
+                weighted_avg_cost = ((existing_qty * existing_cost) + (new_qty * new_cost)) / total_qty if total_qty > 0 else 0
+
+                # Sum market values
+                existing['marketValue'] = existing.get('marketValue', 0) + position.get('marketValue', 0)
+
+                # Sum unrealized P/L
+                existing['unrealizedPnl'] = existing.get('unrealizedPnl', 0) + position.get('unrealizedPnl', 0)
+
+                # Update quantity and avg cost
+                existing['quantity'] = total_qty
+                existing['avgCost'] = weighted_avg_cost
+
+                # Recalculate return percentage
+                total_cost = total_qty * weighted_avg_cost
+                existing['returnPct'] = (existing['unrealizedPnl'] / total_cost * 100) if total_cost > 0 else 0
+
+                # Latest price should be same, but take the most recent one just in case
+                existing['latest_price'] = position.get('latest_price', existing.get('latest_price'))
+
+                # Portfolio percent will be recalculated later based on total equity
+                # For other fields like intraday_percent_change, take the value (should be same for same ticker)
+                existing['intraday_percent_change'] = position.get('intraday_percent_change', existing.get('intraday_percent_change'))
+
+        # Convert merged_positions dict back to list
+        combined_positions = list(merged_positions.values())
+
+        # Recalculate portfolio_percent for all positions based on total equity
+        # First calculate total equity for percentage calculation
+        total_equity_for_pct = sum(pos.get('marketValue', 0) for pos in combined_positions)
+        for position in combined_positions:
+            if total_equity_for_pct > 0:
+                position['portfolio_percent'] = (position.get('marketValue', 0) / total_equity_for_pct) * 100
+
         # Calculate combined summary metrics
         total_equity = sum(data.get('summary', {}).get('totalEquity', 0) for data in all_accounts_data.values())
         total_change_today_abs = sum(data.get('summary', {}).get('changeTodayAbs', 0) for data in all_accounts_data.values())
@@ -976,17 +1047,26 @@ def calculate_group_metrics(positions, group_position_ids):
 
 def get_position_id(position):
     """Generate a unique ID for a position"""
-    # For ALL page, include account name to make IDs unique across accounts
+    # For ALL page, account can be either a string or an array (for merged positions)
     account = position.get('account', '')
 
+    # Determine the base ID based on position type
     if position.get('type') == 'option':
         base_id = f"{position['ticker']}-{position.get('expiry', '')}-{position.get('strike', '')}-{position.get('option_type', '')}"
+    elif position.get('type') == 'cash':
+        base_id = position.get('ticker', '')
     else:
+        # Stock position
         base_id = position.get('ticker', '')
 
-    # If account is present, append it to make ID unique
-    if account:
+    # For merged positions (account is an array), use just the base_id
+    if isinstance(account, list):
+        return base_id
+
+    # For non-merged positions (account is a string), append account to make ID unique
+    if account and isinstance(account, str):
         return f"{base_id}-{account}"
+
     return base_id
 
 # --- Groups API Endpoints ---
