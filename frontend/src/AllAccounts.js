@@ -33,6 +33,12 @@ const PlusIcon = () => (
     </svg>
 );
 
+const LoginIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+    </svg>
+);
+
 const MetricCardSkeleton = () => (
     <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 animate-pulse">
         <div className="h-4 bg-gray-600 rounded w-3/4 mb-3"></div>
@@ -146,6 +152,8 @@ function AllAccounts() {
     const [editingGroup, setEditingGroup] = useState(null);
     const [sortConfig, setSortConfig] = useState({ key: 'marketValue', direction: 'descending' });
     const [globalNotes, setGlobalNotes] = useState({});
+    const [loginLoading, setLoginLoading] = useState(false);
+    const [loginMessage, setLoginMessage] = useState(null);
     const settingsRef = useRef(null);
 
     // Group management for ALL account
@@ -193,11 +201,16 @@ function AllAccounts() {
 
             if (savedOrder) {
                 const parsedOrder = JSON.parse(savedOrder);
-                if (
-                    parsedOrder.length === initialOrder.length &&
-                    parsedOrder.every(key => initialOrder.includes(key))
-                ) {
-                    return parsedOrder;
+                // Remove duplicates
+                const uniqueOrder = [...new Set(parsedOrder)];
+                // Add any missing columns from the config
+                const allKeys = Object.keys(tableConfig.default_columns);
+                const missingKeys = allKeys.filter(key => !uniqueOrder.includes(key));
+                const finalOrder = [...uniqueOrder, ...missingKeys];
+
+                // Validate that all keys exist in the config
+                if (finalOrder.every(key => allKeys.includes(key))) {
+                    return finalOrder;
                 }
             }
             return initialOrder;
@@ -544,6 +557,29 @@ function AllAccounts() {
         }
     };
 
+    // Login handler
+    const handleReLogin = async () => {
+        setLoginLoading(true);
+        setLoginMessage(null);
+        try {
+            const response = await fetch(`${config.api.base_url}${config.api.endpoints.auth_login}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                setLoginMessage({ type: 'success', text: 'Login successful!' });
+                setTimeout(() => setLoginMessage(null), 3000);
+            } else {
+                setLoginMessage({ type: 'error', text: data.message || 'Login failed' });
+            }
+        } catch (e) {
+            setLoginMessage({ type: 'error', text: `Login error: ${e.message}` });
+        } finally {
+            setLoginLoading(false);
+        }
+    };
+
     // Custom assignment handler for ALL page
     // When assigning a position, also assign all positions with the same ticker
     const handleAssignPosition = useCallback(async (positionId, targetGroupId) => {
@@ -658,6 +694,15 @@ function AllAccounts() {
     return (
         <div className="space-y-8">
             {error && <div className="bg-red-800/50 text-red-200 p-4 rounded-lg mb-6 border border-red-700">{error}</div>}
+            {loginMessage && (
+                <div className={`p-4 rounded-lg mb-6 border ${
+                    loginMessage.type === 'success'
+                        ? 'bg-green-800/50 text-green-200 border-green-700'
+                        : 'bg-red-800/50 text-red-200 border-red-700'
+                }`}>
+                    {loginMessage.text}
+                </div>
+            )}
 
             <header className="mb-8">
                 <h2 className="text-2xl font-bold text-white">All Accounts Overview</h2>
@@ -702,17 +747,25 @@ function AllAccounts() {
 
             {/* Global Controls */}
             <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-semibold text-white">Account Positions</h3>
+                <h3 className="text-lg font-semibold text-white">Positions</h3>
                 <div className="flex items-center space-x-2">
                     <button
                         onClick={() => setShowCreateGroup(true)}
-                        className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
-                        title="Create New Group"
+                        className="flex items-center space-x-2 px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
+                        title="Create Group"
                     >
                         <PlusIcon />
                         <span>Create Group</span>
                     </button>
-                    <button onClick={() => fetchAllData(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" title="Force Refresh All">
+                    <button
+                        onClick={handleReLogin}
+                        disabled={loginLoading}
+                        className="p-2 rounded-full hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Re-login to Robinhood"
+                    >
+                        <LoginIcon />
+                    </button>
+                    <button onClick={() => fetchAllData(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" title="Force Refresh">
                         <RefreshIcon />
                     </button>
                     <div className="relative" ref={settingsRef}>

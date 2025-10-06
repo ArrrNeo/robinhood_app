@@ -206,11 +206,16 @@ function App() {
 
             if (savedOrder) {
                 const parsedOrder = JSON.parse(savedOrder);
-                if (
-                    parsedOrder.length === initialOrder.length &&
-                    parsedOrder.every(key => initialOrder.includes(key))
-                ) {
-                    return parsedOrder;
+                // Remove duplicates
+                const uniqueOrder = [...new Set(parsedOrder)];
+                // Add any missing columns from the config
+                const allKeys = Object.keys(tableConfig.default_columns);
+                const missingKeys = allKeys.filter(key => !uniqueOrder.includes(key));
+                const finalOrder = [...uniqueOrder, ...missingKeys];
+
+                // Validate that all keys exist in the config
+                if (finalOrder.every(key => allKeys.includes(key))) {
+                    return finalOrder;
                 }
             }
             return initialOrder;
