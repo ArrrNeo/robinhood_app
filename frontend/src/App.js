@@ -661,15 +661,21 @@ function App() {
     };
 
     return (
-        <div className="bg-gray-900 text-gray-200 font-sans flex h-screen overflow-hidden" style={{fontFamily: "'Inter', sans-serif"}}>
-            <aside className="w-60 bg-black/30 p-6 border-r border-gray-700 flex flex-col flex-shrink-0 overflow-y-auto">
-                <h1 className="text-xl font-bold mb-8 text-white">Portfolio Tracker</h1>
-                <div className="mb-8">
-                    <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Accounts</h2>
-                    <nav className="flex flex-col space-y-2">
+        <div className="bg-gray-900 text-gray-200 font-sans flex flex-col h-screen overflow-hidden" style={{fontFamily: "'Inter', sans-serif"}}>
+            {/* Header with Tabs */}
+            <header className="bg-black/30 border-b border-gray-700 flex-shrink-0">
+                <div className="px-6 py-4">
+                    <h1 className="text-xl font-bold text-white mb-4">Portfolio Tracker</h1>
+
+                    {/* Main Account Tabs */}
+                    <div className="flex space-x-1 mb-3">
                         <button
                             onClick={() => setCurrentPage('all')}
-                            className={`text-left px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors w-full ${currentPage === 'all' ? 'bg-gray-700 font-semibold text-white' : ''}`}
+                            className={`px-4 py-2 rounded-t-md transition-colors ${
+                                currentPage === 'all'
+                                    ? 'bg-gray-700 text-white font-semibold border-b-2 border-blue-500'
+                                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+                            }`}
                         >
                             All
                         </button>
@@ -680,33 +686,44 @@ function App() {
                                     setSelectedAccount(acc);
                                     setCurrentPage('portfolio');
                                 }}
-                                className={`text-left px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors w-full ${selectedAccount === acc && currentPage === 'portfolio' ? 'bg-gray-700 font-semibold text-white' : ''}`}
+                                className={`px-4 py-2 rounded-t-md transition-colors ${
+                                    selectedAccount === acc && currentPage !== 'all'
+                                        ? 'bg-gray-700 text-white font-semibold border-b-2 border-blue-500'
+                                        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+                                }`}
                             >
                                 {acc.replace(/_/g, ' ')}
                             </button>
                         ))}
-                    </nav>
-                </div>
-                {currentPage !== 'all' && selectedAccount && (
-                    <div>
-                        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Views</h2>
-                        <nav className="flex flex-col space-y-2">
+                    </div>
+
+                    {/* Sub-tabs for Portfolio/Orders (only show when not on "All" page) */}
+                    {currentPage !== 'all' && selectedAccount && (
+                        <div className="flex space-x-1 border-t border-gray-700 pt-2">
                             <button
                                 onClick={() => setCurrentPage('portfolio')}
-                                className={`text-left px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors w-full ${currentPage === 'portfolio' ? 'bg-gray-700 font-semibold text-white' : ''}`}
+                                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                                    currentPage === 'portfolio'
+                                        ? 'bg-gray-600 text-white font-medium'
+                                        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
+                                }`}
                             >
                                 Portfolio
                             </button>
                             <button
                                 onClick={() => setCurrentPage('orders')}
-                                className={`text-left px-4 py-2 rounded-md text-gray-300 hover:bg-gray-700 transition-colors w-full ${currentPage === 'orders' ? 'bg-gray-700 font-semibold text-white' : ''}`}
+                                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                                    currentPage === 'orders'
+                                        ? 'bg-gray-600 text-white font-medium'
+                                        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
+                                }`}
                             >
                                 Orders
                             </button>
-                        </nav>
-                    </div>
-                )}
-            </aside>
+                        </div>
+                    )}
+                </div>
+            </header>
 
             <main className="flex-1 flex flex-col overflow-hidden">
                 {currentPage === 'all' ? (
