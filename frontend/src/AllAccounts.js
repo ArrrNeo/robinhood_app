@@ -154,6 +154,10 @@ function AllAccounts() {
     const [globalNotes, setGlobalNotes] = useState({});
     const [loginLoading, setLoginLoading] = useState(false);
     const [loginMessage, setLoginMessage] = useState(null);
+    const [showGroups, setShowGroups] = useState(() => {
+        const saved = localStorage.getItem('showGroups_ALL');
+        return saved !== null ? JSON.parse(saved) : true;
+    });
     const settingsRef = useRef(null);
 
     // Group management for ALL account
@@ -228,6 +232,23 @@ function AllAccounts() {
     const sortedData = useMemo(() => {
         if (!allAccountsData || !allAccountsData.positions) {
             return { sortedUnits: [] };
+        }
+
+        // If groups are hidden, just return all positions sorted
+        if (!showGroups) {
+            const allPositions = [...allAccountsData.positions];
+            if (sortConfig.key) {
+                allPositions.sort((a, b) => {
+                    if (a[sortConfig.key] < b[sortConfig.key]) {
+                        return sortConfig.direction === 'ascending' ? -1 : 1;
+                    }
+                    if (a[sortConfig.key] > b[sortConfig.key]) {
+                        return sortConfig.direction === 'ascending' ? 1 : -1;
+                    }
+                    return 0;
+                });
+            }
+            return { sortedUnits: allPositions.map(position => ({ type: 'position', position })) };
         }
 
         // Group-applicable sorting keys
@@ -364,7 +385,7 @@ function AllAccounts() {
 
         // Return sorted units as-is for interleaved rendering
         return { sortedUnits: sortableUnits };
-    }, [allAccountsData, sortConfig, groups, groupMetrics, organizePositionsByGroups]);
+    }, [allAccountsData, sortConfig, groups, groupMetrics, organizePositionsByGroups, showGroups]);
 
     const requestSort = (key) => {
         let direction = 'ascending';
@@ -381,6 +402,10 @@ function AllAccounts() {
     useEffect(() => {
         localStorage.setItem(config.cache.local_storage_keys.column_order, JSON.stringify(columnOrder));
     }, [columnOrder]);
+
+    useEffect(() => {
+        localStorage.setItem('showGroups_ALL', JSON.stringify(showGroups));
+    }, [showGroups]);
 
     const handleColumnToggle = (key) => {
         setColumns(prev => ({
@@ -795,7 +820,18 @@ function AllAccounts() {
 
                 {/* Global Controls */}
                 <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-lg font-semibold text-white">Positions</h3>
+                    <div className="flex items-center space-x-4">
+                        <h3 className="text-lg font-semibold text-white">Positions</h3>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={showGroups}
+                                onChange={(e) => setShowGroups(e.target.checked)}
+                                className="form-checkbox h-4 w-4 bg-gray-700 border-gray-500 rounded text-blue-500 focus:ring-offset-0 focus:ring-2 focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-300">Show Groups</span>
+                        </label>
+                    </div>
                     <div className="flex items-center space-x-2">
                         <button
                             onClick={() => setShowCreateGroup(true)}
