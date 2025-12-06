@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import './index.css';
 import OrdersPage from './Orders';
 import AllAccounts from './AllAccounts';
-import ChartsPage from './Charts';
 import { CreateGroupModal, EditGroupModal, GroupRow, GroupAssignmentDropdown, useGroupManagement } from './GroupManager';
 import config from './config.json';
 import tableConfig from './table-columns.json';
@@ -174,7 +173,6 @@ function App() {
         return saved !== null ? JSON.parse(saved) : true;
     });
     const [fetchingHistorical, setFetchingHistorical] = useState({});
-    const [showChartsFor, setShowChartsFor] = useState(null);
 
     // Group management
     const {
@@ -714,7 +712,7 @@ function App() {
             view_charts: <td className="p-4">
                 {!isCash && !isOption && (
                     <button
-                        onClick={() => setShowChartsFor(pos.ticker)}
+                        onClick={() => window.open(`/charts.html?ticker=${pos.ticker}`, '_blank')}
                         className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"
                         title="View historical charts"
                     >
@@ -1047,14 +1045,6 @@ function App() {
                     </div>
                 )}
             </main>
-
-            {/* Charts Modal */}
-            {showChartsFor && (
-                <ChartsPage
-                    ticker={showChartsFor}
-                    onClose={() => setShowChartsFor(null)}
-                />
-            )}
         </div>
     );
 }
