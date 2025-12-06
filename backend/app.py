@@ -427,6 +427,9 @@ def get_data_for_account(account_name, force_refresh=False):
                 # Get revenue changes in one cached call
                 revenue_changes = get_revenue_changes_cached(ticker, ticker, get_yfinance_ticker)
 
+                # Get historical metrics (RSI, P/S, P/E min/max)
+                historical_metrics = get_historical_metrics(ticker)
+
                 all_positions_data.append({
                     "type": "stock",
                     "ticker": ticker,
@@ -453,6 +456,12 @@ def get_data_for_account(account_name, force_refresh=False):
                     "yearly_revenue_change": revenue_changes['yearly_revenue_change'],
                     "sector": fundamentals.get('sector'),
                     "industry": fundamentals.get('industry'),
+                    "current_rsi": historical_metrics['current_rsi'],
+                    "current_ps": historical_metrics['current_ps'],
+                    "ps_12m_max": historical_metrics['ps_12m_max'],
+                    "ps_12m_min": historical_metrics['ps_12m_min'],
+                    "pe_12m_max": historical_metrics['pe_12m_max'],
+                    "pe_12m_min": historical_metrics['pe_12m_min'],
                 })
 
         # 2. then, Fetch and process options
@@ -1318,6 +1327,81 @@ def calculate_rsi(prices, period=14):
         avg_loss = (avg_loss * (period - 1) + losses[i]) / period
 
     return rsi_values
+
+def get_historical_metrics(ticker):
+    """
+    Get current RSI, current P/S, and 12-month P/S and P/E min/max from cached historical data.
+    Returns dict with keys: current_rsi, current_ps, ps_12m_max, ps_12m_min, pe_12m_max, pe_12m_min
+    Returns None for each metric if data not available.
+    """
+    try:
+        # Check if cached historical data exists
+        cache_dir = os.path.join('..', 'cache', 'historical_data')
+        cache_file = os.path.join(cache_dir, f"{ticker.upper()}.json")
+
+        if not os.path.exists(cache_file):
+            return {
+                'current_rsi': None,
+                'current_ps': None,
+                'ps_12m_max': None,
+                'ps_12m_min': None,
+                'pe_12m_max': None,
+                'pe_12m_min': None
+            }
+
+        # Load cached data
+        with open(cache_file, 'r') as f:
+            cached_data = json.load(f)
+
+        data = cached_data.get('data', {})
+        rsi_data = data.get('rsi_data', [])
+        ps_data = data.get('ps_data', [])
+        pe_data = data.get('pe_data', [])
+
+        # Calculate current values (last entry)
+        current_rsi = rsi_data[-1]['rsi'] if rsi_data else None
+        current_ps = ps_data[-1]['ps_ratio'] if ps_data else None
+
+        # Calculate 12-month min/max
+        from datetime import datetime, timedelta
+        today = datetime.now()
+        twelve_months_ago = today - timedelta(days=365)
+
+        # Filter P/S data for last 12 months
+        ps_12m = [
+            entry['ps_ratio'] for entry in ps_data
+            if datetime.strptime(entry['date'], '%Y-%m-%d') >= twelve_months_ago
+        ]
+        ps_12m_max = max(ps_12m) if ps_12m else None
+        ps_12m_min = min(ps_12m) if ps_12m else None
+
+        # Filter P/E data for last 12 months
+        pe_12m = [
+            entry['pe_ratio'] for entry in pe_data
+            if datetime.strptime(entry['date'], '%Y-%m-%d') >= twelve_months_ago
+        ]
+        pe_12m_max = max(pe_12m) if pe_12m else None
+        pe_12m_min = min(pe_12m) if pe_12m else None
+
+        return {
+            'current_rsi': current_rsi,
+            'current_ps': current_ps,
+            'ps_12m_max': ps_12m_max,
+            'ps_12m_min': ps_12m_min,
+            'pe_12m_max': pe_12m_max,
+            'pe_12m_min': pe_12m_min
+        }
+
+    except Exception as e:
+        print(f"Error getting historical metrics for {ticker}: {e}")
+        return {
+            'current_rsi': None,
+            'current_ps': None,
+            'ps_12m_max': None,
+            'ps_12m_min': None,
+            'pe_12m_max': None,
+            'pe_12m_min': None
+        }
 
 @app.route('/api/historical/<string:ticker>', methods=['GET'])
 def get_historical_data(ticker):
