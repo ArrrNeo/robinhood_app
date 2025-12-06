@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import './index.css';
 import OrdersPage from './Orders';
 import AllAccounts from './AllAccounts';
+import ChartsPage from './Charts';
 import { CreateGroupModal, EditGroupModal, GroupRow, GroupAssignmentDropdown, useGroupManagement } from './GroupManager';
 import config from './config.json';
 import tableConfig from './table-columns.json';
@@ -172,6 +173,8 @@ function App() {
         const saved = localStorage.getItem(`showGroups_${selectedAccount}`);
         return saved !== null ? JSON.parse(saved) : true;
     });
+    const [fetchingHistorical, setFetchingHistorical] = useState({});
+    const [showChartsFor, setShowChartsFor] = useState(null);
 
     // Group management
     const {
@@ -636,6 +639,25 @@ function App() {
         }
     };
 
+    const fetchHistoricalData = async (ticker) => {
+        setFetchingHistorical(prev => ({ ...prev, [ticker]: true }));
+        try {
+            const response = await fetch(
+                `${config.api.base_url}${config.api.endpoints.historical}/${ticker}`
+            );
+            if (!response.ok) {
+                throw new Error(`Failed to fetch historical data for ${ticker}`);
+            }
+            const data = await response.json();
+            console.log(`Successfully fetched historical data for ${ticker}`);
+        } catch (error) {
+            console.error(`Error fetching historical data for ${ticker}:`, error);
+            alert(`Failed to fetch data for ${ticker}: ${error.message}`);
+        } finally {
+            setFetchingHistorical(prev => ({ ...prev, [ticker]: false }));
+        }
+    };
+
     const generatePositionCells = (pos) => {
         const isOption = pos.type === 'option';
         const isCash = pos.type === 'cash';
@@ -676,6 +698,29 @@ function App() {
                     groups={groups}
                     onAssign={assignPositionToGroup}
                 />
+            </td>,
+            fetch_charts: <td className="p-4">
+                {!isCash && !isOption && (
+                    <button
+                        onClick={() => fetchHistoricalData(pos.ticker)}
+                        disabled={fetchingHistorical[pos.ticker]}
+                        className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+                        title="Fetch 2-year historical data"
+                    >
+                        {fetchingHistorical[pos.ticker] ? 'Fetching...' : 'Fetch Data'}
+                    </button>
+                )}
+            </td>,
+            view_charts: <td className="p-4">
+                {!isCash && !isOption && (
+                    <button
+                        onClick={() => setShowChartsFor(pos.ticker)}
+                        className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"
+                        title="View historical charts"
+                    >
+                        View Charts
+                    </button>
+                )}
             </td>
         };
     };
@@ -1002,6 +1047,14 @@ function App() {
                     </div>
                 )}
             </main>
+
+            {/* Charts Modal */}
+            {showChartsFor && (
+                <ChartsPage
+                    ticker={showChartsFor}
+                    onClose={() => setShowChartsFor(null)}
+                />
+            )}
         </div>
     );
 }

@@ -10,7 +10,8 @@
       "group_metrics": "/api/groups",
       "group_assign": "/api/groups",
       "auth_login": "/api/auth/login",
-      "auth_status": "/api/auth/status"
+      "auth_status": "/api/auth/status",
+      "historical": "/api/historical"
     }
   },
   "cache": {
@@ -19,7 +20,8 @@
       "column_order": "portfolio-column-order",
       "selected_account": "selectedAccount",
       "current_page": "currentPage",
-      "portfolio_data_prefix": "portfolio-data-"
+      "portfolio_data_prefix": "portfolio-data-",
+      "historical_data_prefix": "historical-data-"
     }
   }
 }

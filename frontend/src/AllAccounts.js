@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import ChartsPage from './Charts';
 import { CreateGroupModal, EditGroupModal, GroupRow, GroupAssignmentDropdown, useGroupManagement } from './GroupManager';
 import config from './config.json';
 import tableConfig from './table-columns.json';
@@ -158,6 +159,8 @@ function AllAccounts() {
         const saved = localStorage.getItem('showGroups_ALL');
         return saved !== null ? JSON.parse(saved) : true;
     });
+    const [fetchingHistorical, setFetchingHistorical] = useState({});
+    const [showChartsFor, setShowChartsFor] = useState(null);
     const settingsRef = useRef(null);
 
     // Group management for ALL account
@@ -640,6 +643,25 @@ function AllAccounts() {
         }
     };
 
+    const fetchHistoricalData = async (ticker) => {
+        setFetchingHistorical(prev => ({ ...prev, [ticker]: true }));
+        try {
+            const response = await fetch(
+                `${config.api.base_url}${config.api.endpoints.historical}/${ticker}`
+            );
+            if (!response.ok) {
+                throw new Error(`Failed to fetch historical data for ${ticker}`);
+            }
+            const data = await response.json();
+            console.log(`Successfully fetched historical data for ${ticker}`);
+        } catch (error) {
+            console.error(`Error fetching historical data for ${ticker}:`, error);
+            alert(`Failed to fetch data for ${ticker}: ${error.message}`);
+        } finally {
+            setFetchingHistorical(prev => ({ ...prev, [ticker]: false }));
+        }
+    };
+
     // Custom assignment handler for ALL page
     // For merged stocks (account is array), assign just that position
     // For non-merged positions, also assign all positions with the same ticker
@@ -726,9 +748,32 @@ function AllAccounts() {
             </td>,
             comment: <td className="p-4 font-mono"><EditableIndustryCell ticker={pos.ticker} initialIndustry={pos.comment} onSave={handleSaveCell} /></td>,
             industry: <td className="p-4 text-gray-300">{pos.industry}</td>,
-            sector: <td className="p-4 text-gray-300">{pos.sector}</td>
+            sector: <td className="p-4 text-gray-300">{pos.sector}</td>,
+            fetch_charts: <td className="p-4">
+                {!isCash && !isOption && (
+                    <button
+                        onClick={() => fetchHistoricalData(pos.ticker)}
+                        disabled={fetchingHistorical[pos.ticker]}
+                        className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+                        title="Fetch 2-year historical data"
+                    >
+                        {fetchingHistorical[pos.ticker] ? 'Fetching...' : 'Fetch Data'}
+                    </button>
+                )}
+            </td>,
+            view_charts: <td className="p-4">
+                {!isCash && !isOption && (
+                    <button
+                        onClick={() => setShowChartsFor(pos.ticker)}
+                        className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"
+                        title="View historical charts"
+                    >
+                        View Charts
+                    </button>
+                )}
+            </td>
         };
-    }, [groups, handleAssignPosition, handleSaveCell]);
+    }, [groups, handleAssignPosition, handleSaveCell, fetchingHistorical]);
 
     // Render a full position row
     const renderPositionRow = useCallback((pos) => {
@@ -970,6 +1015,14 @@ function AllAccounts() {
                 onSubmit={handleUpdateGroup}
                 group={editingGroup?.group}
             />
+
+            {/* Charts Modal */}
+            {showChartsFor && (
+                <ChartsPage
+                    ticker={showChartsFor}
+                    onClose={() => setShowChartsFor(null)}
+                />
+            )}
         </div>
     );
 }

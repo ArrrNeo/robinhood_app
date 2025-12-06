@@ -29,7 +29,9 @@
     "group": { "label": "Group", "visible": true },
     "comment": { "label": "Comment", "visible": false },
     "industry": { "label": "Industry", "visible": false },
-    "sector": { "label": "Sector", "visible": false }
+    "sector": { "label": "Sector", "visible": false },
+    "fetch_charts": { "label": "Fetch Data", "visible": true },
+    "view_charts": { "label": "View Charts", "visible": true }
   },
   "default_order": [
     "ticker", "name", "account", "marketValue", "quantity", "avgCost", "latest_price",
@@ -38,6 +40,6 @@
     "pe_ratio", "high_52_weeks", "low_52_weeks", "position_52_week",
     "one_week_change", "one_month_change", "three_month_change",
     "one_year_change", "yearly_revenue_change", "notes", "group", "comment",
-    "industry", "sector"
+    "industry", "sector", "fetch_charts", "view_charts"
   ]
 }

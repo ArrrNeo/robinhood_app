@@ -1292,6 +1292,235 @@ def login_status():
     except Exception as e:
         return jsonify({"authenticated": False, "error": str(e)}), 200
 
+def calculate_rsi(prices, period=14):
+    """Calculate RSI for given prices"""
+    if len(prices) < period + 1:
+        return [None] * len(prices)
+
+    deltas = [prices[i] - prices[i-1] for i in range(1, len(prices))]
+    gains = [d if d > 0 else 0 for d in deltas]
+    losses = [-d if d < 0 else 0 for d in deltas]
+
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+
+    rsi_values = [None] * (period)
+
+    for i in range(period, len(deltas)):
+        if avg_loss == 0:
+            rsi = 100
+        else:
+            rs = avg_gain / avg_loss
+            rsi = 100 - (100 / (1 + rs))
+        rsi_values.append(rsi)
+
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+
+    return rsi_values
+
+@app.route('/api/historical/<string:ticker>', methods=['GET'])
+def get_historical_data(ticker):
+    """Fetch and cache 2-year historical data for a ticker"""
+    try:
+        force_refresh = request.args.get('force', 'false').lower() == 'true'
+
+        # Check cache first
+        cache_dir = os.path.join('..', 'cache', 'historical_data')
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_file = os.path.join(cache_dir, f"{ticker.upper()}.json")
+
+        # Check if cache exists and is valid (less than 1 day old)
+        if not force_refresh and os.path.exists(cache_file):
+            try:
+                with open(cache_file, 'r') as f:
+                    cached_data = json.load(f)
+
+                cache_time = datetime.fromisoformat(cached_data.get('timestamp', ''))
+                now = datetime.now()
+
+                # If cache is less than 1 day old, use it
+                if now - cache_time < timedelta(days=1):
+                    print(f"Using cached historical data for {ticker}")
+                    return jsonify(cached_data['data']), 200
+            except (json.JSONDecodeError, ValueError, KeyError) as e:
+                print(f"Cache read error for {ticker}: {e}")
+
+        # Fetch fresh data
+        print(f"Fetching fresh historical data for {ticker}")
+        symbol = ticker.replace('.', '-')
+        yf_ticker = yfinance.Ticker(symbol)
+
+        # Get 2 years of historical data
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=730)  # 2 years
+
+        # Fetch price history
+        hist = yf_ticker.history(start=start_date, end=end_date)
+
+        if hist.empty:
+            return jsonify({"error": f"No historical data found for {ticker}"}), 404
+
+        # Get quarterly financials for P/S and P/E
+        info = yf_ticker.info
+        quarterly_financials = yf_ticker.quarterly_financials
+        quarterly_balance_sheet = yf_ticker.quarterly_balance_sheet
+
+        # Prepare price data
+        price_data = []
+        for date, row in hist.iterrows():
+            price_data.append({
+                'date': date.strftime('%Y-%m-%d'),
+                'price': float(row['Close'])
+            })
+
+        # Calculate RSI
+        prices = [row['Close'] for _, row in hist.iterrows()]
+        rsi_values = calculate_rsi(prices, period=14)
+
+        rsi_data = []
+        for i, (date, _) in enumerate(hist.iterrows()):
+            if i < len(rsi_values) and rsi_values[i] is not None:
+                rsi_data.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'rsi': float(rsi_values[i])
+                })
+
+        # Prepare P/E and P/S data (daily using TTM financials)
+        pe_data = []
+        ps_data = []
+
+        try:
+            shares_outstanding = info.get('sharesOutstanding', None)
+
+            if not shares_outstanding:
+                print(f"No shares outstanding data for {ticker}")
+            elif not quarterly_financials.empty:
+                # Extract quarterly data and sort by date (oldest to newest)
+                revenue_available = 'Total Revenue' in quarterly_financials.index
+                earnings_available = 'Net Income Common Stockholders' in quarterly_financials.index
+
+                if not earnings_available:
+                    # Fallback to 'Net Income' if 'Net Income Common Stockholders' not available
+                    earnings_available = 'Net Income' in quarterly_financials.index
+                    earnings_key = 'Net Income'
+                else:
+                    earnings_key = 'Net Income Common Stockholders'
+
+                # Build TTM timeline
+                ttm_timeline = []  # List of {date, ttm_revenue, ttm_earnings}
+
+                if revenue_available or earnings_available:
+                    # Get quarterly dates in chronological order
+                    quarter_dates = sorted(quarterly_financials.columns)
+
+                    # For each quarter, calculate TTM if we have 4 quarters of data
+                    for i in range(3, len(quarter_dates)):
+                        quarter_date = quarter_dates[i]
+                        last_4_quarters = quarter_dates[i-3:i+1]
+
+                        ttm_entry = {'date': quarter_date}
+
+                        # Calculate TTM revenue
+                        if revenue_available:
+                            revenue_values = []
+                            for q_date in last_4_quarters:
+                                rev = quarterly_financials.loc['Total Revenue', q_date]
+                                if rev and not (isinstance(rev, float) and rev != rev):  # Check for NaN
+                                    revenue_values.append(float(rev))
+
+                            if len(revenue_values) == 4:
+                                ttm_entry['ttm_revenue'] = sum(revenue_values)
+
+                        # Calculate TTM earnings
+                        if earnings_available:
+                            earnings_values = []
+                            for q_date in last_4_quarters:
+                                earn = quarterly_financials.loc[earnings_key, q_date]
+                                if earn and not (isinstance(earn, float) and earn != earn):  # Check for NaN
+                                    earnings_values.append(float(earn))
+
+                            if len(earnings_values) == 4:
+                                ttm_entry['ttm_earnings'] = sum(earnings_values)
+
+                        # Only add if we have at least one TTM metric
+                        if 'ttm_revenue' in ttm_entry or 'ttm_earnings' in ttm_entry:
+                            ttm_timeline.append(ttm_entry)
+
+                # Calculate daily P/S and P/E ratios
+                if ttm_timeline:
+                    for date, row in hist.iterrows():
+                        price = float(row['Close'])
+                        market_cap = price * shares_outstanding
+
+                        # Normalize date for comparison (remove timezone if present)
+                        price_date = date.replace(tzinfo=None) if hasattr(date, 'tzinfo') and date.tzinfo else date
+
+                        # Find the most recent TTM data available as of this date
+                        applicable_ttm = None
+                        for ttm_entry in ttm_timeline:
+                            ttm_date = ttm_entry['date'].replace(tzinfo=None) if hasattr(ttm_entry['date'], 'tzinfo') and ttm_entry['date'].tzinfo else ttm_entry['date']
+                            if ttm_date <= price_date:
+                                applicable_ttm = ttm_entry
+                            else:
+                                break
+
+                        if applicable_ttm:
+                            date_str = date.strftime('%Y-%m-%d')
+
+                            # Calculate P/S if TTM revenue available
+                            if 'ttm_revenue' in applicable_ttm and applicable_ttm['ttm_revenue'] > 0:
+                                ps_ratio = market_cap / applicable_ttm['ttm_revenue']
+                                ps_data.append({
+                                    'date': date_str,
+                                    'ps_ratio': float(ps_ratio)
+                                })
+
+                            # Calculate P/E if TTM earnings available and positive
+                            if 'ttm_earnings' in applicable_ttm and applicable_ttm['ttm_earnings'] > 0:
+                                pe_ratio = market_cap / applicable_ttm['ttm_earnings']
+                                pe_data.append({
+                                    'date': date_str,
+                                    'pe_ratio': float(pe_ratio)
+                                })
+        except Exception as e:
+            print(f"Error calculating P/E or P/S ratios for {ticker}: {e}")
+            import traceback
+            traceback.print_exc()
+
+        # Sort data by date
+        pe_data.sort(key=lambda x: x['date'])
+        ps_data.sort(key=lambda x: x['date'])
+
+        result = {
+            'ticker': ticker,
+            'price_data': price_data,
+            'rsi_data': rsi_data,
+            'pe_data': pe_data,
+            'ps_data': ps_data,
+            'last_updated': datetime.now().isoformat()
+        }
+
+        # Cache the result
+        cache_data = {
+            'timestamp': datetime.now().isoformat(),
+            'data': result
+        }
+
+        try:
+            with open(cache_file, 'w') as f:
+                json.dump(cache_data, f, indent=2)
+            print(f"Cached historical data for {ticker}")
+        except Exception as e:
+            print(f"Error caching historical data for {ticker}: {e}")
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        print(f"Error fetching historical data for {ticker}: {e}")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 # --- Run the App ---
 if __name__ == '__main__':
     # Clean up expired cache on startup
