@@ -690,6 +690,7 @@ function App() {
     const fetchHistoricalData = async (ticker) => {
         setFetchingHistorical(prev => ({ ...prev, [ticker]: true }));
         try {
+            console.log(`[1/4] Fetching historical data for ${ticker}...`);
             const response = await fetch(
                 `${config.api.base_url}${config.api.endpoints.historical}/${ticker}`
             );
@@ -697,18 +698,22 @@ function App() {
                 throw new Error(`Failed to fetch historical data for ${ticker}`);
             }
             const data = await response.json();
-            console.log(`Successfully fetched historical data for ${ticker}`);
+            console.log(`[2/4] Historical data fetched successfully`);
 
             // Invalidate backend portfolio cache so it re-reads historical data
-            await fetch(
+            console.log(`[3/4] Invalidating backend cache for ${selectedAccount}...`);
+            const invalidateResponse = await fetch(
                 `${config.api.base_url}/api/cache/invalidate/${selectedAccount}`,
                 { method: 'POST' }
             );
+            console.log(`[3/4] Cache invalidated:`, await invalidateResponse.json());
 
             // Clear localStorage cache and fetch fresh data from backend
             const cacheKey = `${config.cache.local_storage_keys.portfolio_data_prefix}${selectedAccount}`;
             localStorage.removeItem(cacheKey);
+            console.log(`[4/4] Refreshing portfolio data...`);
             await fetchData(false);
+            console.log(`[4/4] Portfolio data refreshed! Metrics should now be visible.`);
         } catch (error) {
             console.error(`Error fetching historical data for ${ticker}:`, error);
             alert(`Failed to fetch data for ${ticker}: ${error.message}`);
