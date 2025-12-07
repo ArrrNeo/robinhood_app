@@ -737,6 +737,11 @@ def get_data_for_all_accounts(force_refresh=False):
                 # For other fields like intraday_percent_change, take the value (should be same for same ticker)
                 existing['intraday_percent_change'] = position.get('intraday_percent_change', existing.get('intraday_percent_change'))
 
+                # Preserve historical metrics (ticker-based, not account-based, so take from any position)
+                for metric_key in ['current_rsi', 'current_ps', 'ps_12m_max', 'ps_12m_min', 'pe_12m_max', 'pe_12m_min']:
+                    if metric_key not in existing or existing.get(metric_key) is None:
+                        existing[metric_key] = position.get(metric_key)
+
         # Convert merged_positions dict back to list
         combined_positions = list(merged_positions.values())
 

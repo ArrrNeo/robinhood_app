@@ -694,6 +694,7 @@ function AllAccounts() {
     const fetchHistoricalData = async (ticker) => {
         setFetchingHistorical(prev => ({ ...prev, [ticker]: true }));
         try {
+            console.log(`[1/4] Fetching historical data for ${ticker}...`);
             const response = await fetch(
                 `${config.api.base_url}${config.api.endpoints.historical}/${ticker}`
             );
@@ -701,18 +702,25 @@ function AllAccounts() {
                 throw new Error(`Failed to fetch historical data for ${ticker}`);
             }
             const data = await response.json();
-            console.log(`Successfully fetched historical data for ${ticker}`);
+            console.log(`[2/4] Historical data fetched successfully`);
 
-            // Invalidate backend portfolio cache for ALL account
-            await fetch(
-                `${config.api.base_url}/api/cache/invalidate/ALL`,
-                { method: 'POST' }
-            );
+            // Invalidate backend portfolio cache for all accounts (ALL + individual accounts)
+            console.log(`[3/4] Invalidating backend cache for all accounts...`);
+            const accountsToInvalidate = ['ALL', 'INDIVIDUAL', 'ROTH_IRA', 'TRADITIONAL_IRA'];
+            for (const account of accountsToInvalidate) {
+                await fetch(
+                    `${config.api.base_url}/api/cache/invalidate/${account}`,
+                    { method: 'POST' }
+                );
+            }
+            console.log(`[3/4] All caches invalidated`);
 
             // Clear localStorage cache and refresh
             const cacheKey = `${config.cache.local_storage_keys.portfolio_data_prefix}ALL`;
             localStorage.removeItem(cacheKey);
+            console.log(`[4/4] Refreshing portfolio data...`);
             await fetchAllData(false);
+            console.log(`[4/4] Portfolio data refreshed! Metrics for ${ticker} should now be visible.`);
         } catch (error) {
             console.error(`Error fetching historical data for ${ticker}:`, error);
             alert(`Failed to fetch data for ${ticker}: ${error.message}`);

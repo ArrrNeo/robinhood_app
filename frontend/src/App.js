@@ -700,13 +700,17 @@ function App() {
             const data = await response.json();
             console.log(`[2/4] Historical data fetched successfully`);
 
-            // Invalidate backend portfolio cache so it re-reads historical data
-            console.log(`[3/4] Invalidating backend cache for ${selectedAccount}...`);
-            const invalidateResponse = await fetch(
-                `${config.api.base_url}/api/cache/invalidate/${selectedAccount}`,
-                { method: 'POST' }
-            );
-            console.log(`[3/4] Cache invalidated:`, await invalidateResponse.json());
+            // Invalidate backend portfolio cache for all accounts
+            // (ticker may appear in multiple accounts, so invalidate all to be safe)
+            console.log(`[3/4] Invalidating backend cache for all accounts...`);
+            const accountsToInvalidate = ['ALL', 'INDIVIDUAL', 'ROTH_IRA', 'TRADITIONAL_IRA'];
+            for (const account of accountsToInvalidate) {
+                await fetch(
+                    `${config.api.base_url}/api/cache/invalidate/${account}`,
+                    { method: 'POST' }
+                );
+            }
+            console.log(`[3/4] All caches invalidated`);
 
             // Clear localStorage cache and fetch fresh data from backend
             const cacheKey = `${config.cache.local_storage_keys.portfolio_data_prefix}${selectedAccount}`;
