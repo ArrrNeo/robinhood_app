@@ -1013,9 +1013,9 @@ function AllAccounts() {
 
                 {/* Scrollable Table with Sticky Header */}
                 <div className="flex-1 overflow-auto">
-                    <table className="w-full text-left min-w-[1200px]">
-                        <thead className="bg-gray-800 border-b border-gray-700 sticky top-0 z-10">
-                            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                        <table className="w-full text-left min-w-[1200px]">
+                            <thead className="bg-gray-800 border-b border-gray-700 sticky top-0 z-10">
                                 <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
                                     <tr>
                                         {columnOrder.map(key => {
@@ -1029,7 +1029,6 @@ function AllAccounts() {
                                         })}
                                     </tr>
                                 </SortableContext>
-                            </DndContext>
                         </thead>
                         <tbody>
                             {loading && !allAccountsData ? (
@@ -1069,6 +1068,7 @@ function AllAccounts() {
                             )}
                         </tbody>
                     </table>
+                </DndContext>
                 </div>
             </div>
 

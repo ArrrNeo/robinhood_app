@@ -1028,9 +1028,9 @@ function App() {
                         <div className="flex-1 overflow-hidden px-8">
                             <div className="bg-gray-800/50 border border-gray-700 rounded-lg h-full flex flex-col">
                                 <div className="overflow-x-auto flex-1">
-                                    <table className="w-full text-left min-w-[1200px]">
-                                        <thead className="bg-gray-800 border-b border-gray-700 sticky top-0 z-10">
-                                            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                                        <table className="w-full text-left min-w-[1200px]">
+                                            <thead className="bg-gray-800 border-b border-gray-700 sticky top-0 z-10">
                                                 <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
                                                     <tr>
                                                         {columnOrder.map(key => {
@@ -1044,7 +1044,6 @@ function App() {
                                                         })}
                                                     </tr>
                                                 </SortableContext>
-                                            </DndContext>
                                         </thead>
                                         <tbody>
                                         {loading && !portfolioData ? (
@@ -1087,6 +1086,7 @@ function App() {
                                         )}
                                         </tbody>
                                     </table>
+                                    </DndContext>
                                 </div>
                             </div>
                         </div>
