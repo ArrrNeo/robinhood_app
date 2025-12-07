@@ -699,7 +699,15 @@ function App() {
             const data = await response.json();
             console.log(`Successfully fetched historical data for ${ticker}`);
 
-            // Refresh portfolio data to get updated metrics without full force refresh
+            // Invalidate backend portfolio cache so it re-reads historical data
+            await fetch(
+                `${config.api.base_url}/api/cache/invalidate/${selectedAccount}`,
+                { method: 'POST' }
+            );
+
+            // Clear localStorage cache and fetch fresh data from backend
+            const cacheKey = `${config.cache.local_storage_keys.portfolio_data_prefix}${selectedAccount}`;
+            localStorage.removeItem(cacheKey);
             await fetchData(false);
         } catch (error) {
             console.error(`Error fetching historical data for ${ticker}:`, error);

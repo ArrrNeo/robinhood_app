@@ -1301,6 +1301,23 @@ def login_status():
     except Exception as e:
         return jsonify({"authenticated": False, "error": str(e)}), 200
 
+@app.route('/api/cache/invalidate/<string:account_name>', methods=['POST'])
+def invalidate_portfolio_cache(account_name):
+    """Invalidate portfolio cache for a specific account"""
+    try:
+        cache_dir = os.path.join(config['cache']['cache_directory'], account_name)
+        portfolio_cache_file = os.path.join(cache_dir, 'portfolio_data.json')
+
+        if os.path.exists(portfolio_cache_file):
+            os.remove(portfolio_cache_file)
+            print(f"Invalidated portfolio cache for {account_name}")
+            return jsonify({"success": True, "message": f"Cache invalidated for {account_name}"}), 200
+        else:
+            return jsonify({"success": True, "message": "No cache file found"}), 200
+    except Exception as e:
+        print(f"Error invalidating cache: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
 def calculate_rsi(prices, period=14):
     """Calculate RSI for given prices"""
     if len(prices) < period + 1:
