@@ -1608,12 +1608,53 @@ def get_historical_data(ticker):
         pe_data.sort(key=lambda x: x['date'])
         ps_data.sort(key=lambda x: x['date'])
 
+        # Calculate TTM YoY revenue growth
+        revenue_growth_data = []
+        try:
+            if ttm_timeline and len(ttm_timeline) > 0:
+                # Sort ttm_timeline by date
+                ttm_timeline.sort(key=lambda x: x['date'])
+
+                # For each day's price data, calculate YoY revenue growth
+                for date, row in hist.iterrows():
+                    price_date = date.replace(tzinfo=None) if hasattr(date, 'tzinfo') and date.tzinfo else date
+
+                    # Find current TTM revenue
+                    current_ttm = None
+                    for ttm_entry in ttm_timeline:
+                        ttm_date = ttm_entry['date'].replace(tzinfo=None) if hasattr(ttm_entry['date'], 'tzinfo') and ttm_entry['date'].tzinfo else ttm_entry['date']
+                        if ttm_date <= price_date:
+                            current_ttm = ttm_entry
+                        else:
+                            break
+
+                    if current_ttm and 'ttm_revenue' in current_ttm:
+                        # Find TTM revenue from 1 year ago
+                        one_year_ago = price_date - timedelta(days=365)
+                        prior_ttm = None
+                        for ttm_entry in ttm_timeline:
+                            ttm_date = ttm_entry['date'].replace(tzinfo=None) if hasattr(ttm_entry['date'], 'tzinfo') and ttm_entry['date'].tzinfo else ttm_entry['date']
+                            if ttm_date <= one_year_ago:
+                                prior_ttm = ttm_entry
+                            else:
+                                break
+
+                        if prior_ttm and 'ttm_revenue' in prior_ttm and prior_ttm['ttm_revenue'] > 0:
+                            yoy_growth = ((current_ttm['ttm_revenue'] - prior_ttm['ttm_revenue']) / prior_ttm['ttm_revenue']) * 100
+                            revenue_growth_data.append({
+                                'date': date.strftime('%Y-%m-%d'),
+                                'growth_pct': float(yoy_growth)
+                            })
+        except Exception as e:
+            print(f"Error calculating revenue growth for {ticker}: {e}")
+
         result = {
             'ticker': ticker,
             'price_data': price_data,
             'rsi_data': rsi_data,
             'pe_data': pe_data,
             'ps_data': ps_data,
+            'revenue_growth_data': revenue_growth_data,
             'last_updated': datetime.now().isoformat()
         }
 

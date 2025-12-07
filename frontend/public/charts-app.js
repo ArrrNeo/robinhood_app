@@ -57,6 +57,19 @@ async function fetchData() {
     }
 }
 
+// Filter data to last 1 year
+function filterToOneYear(data) {
+    if (!data || data.length === 0) return data;
+
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+    return data.filter(d => {
+        const itemDate = new Date(d.date);
+        return itemDate >= oneYearAgo;
+    });
+}
+
 // Render all charts
 function renderCharts() {
     if (!historicalData) return;
@@ -65,6 +78,7 @@ function renderCharts() {
         <div class="chart-container" id="price-chart"></div>
         <div class="chart-container" id="valuation-chart"></div>
         <div class="chart-container" id="rsi-chart"></div>
+        <div class="chart-container" id="revenue-growth-chart"></div>
     `;
 
     document.getElementById('content').innerHTML = html;
@@ -72,6 +86,7 @@ function renderCharts() {
     renderPriceChart();
     renderValuationChart();
     renderRSIChart();
+    renderRevenueGrowthChart();
     setupGlobalHover();
 }
 
@@ -101,10 +116,13 @@ function createSVG(containerId, title) {
 
 // Price Chart
 function renderPriceChart() {
-    const data = historicalData.price_data;
+    const allData = historicalData.price_data;
+    if (!allData || allData.length === 0) return;
+
+    const data = filterToOneYear(allData);
     if (!data || data.length === 0) return;
 
-    const svg = createSVG('price-chart', 'Price vs Time');
+    const svg = createSVG('price-chart', 'Price vs Time (1 Year)');
     const { chartWidth, chartHeight } = getChartDimensions();
 
     const prices = data.map(d => d.price);
@@ -125,11 +143,11 @@ function renderPriceChart() {
 function renderValuationChart() {
     const dataKey = currentValuation === 'ps' ? 'ps_data' : 'pe_data';
     const valueKey = currentValuation === 'ps' ? 'ps_ratio' : 'pe_ratio';
-    const title = currentValuation === 'ps' ? 'P/S Ratio vs Time' : 'P/E Ratio vs Time';
+    const title = currentValuation === 'ps' ? 'P/S Ratio vs Time (1 Year)' : 'P/E Ratio vs Time (1 Year)';
     const color = currentValuation === 'ps' ? '#10b981' : '#f59e0b';
 
-    const data = historicalData[dataKey];
-    if (!data || data.length === 0) {
+    const allData = historicalData[dataKey];
+    if (!allData || allData.length === 0) {
         document.getElementById('valuation-chart').innerHTML = `
             <div class="chart-header">
                 <div class="chart-title">${title}</div>
@@ -139,11 +157,22 @@ function renderValuationChart() {
         return;
     }
 
+    const data = filterToOneYear(allData);
+    if (!data || data.length === 0) {
+        document.getElementById('valuation-chart').innerHTML = `
+            <div class="chart-header">
+                <div class="chart-title">${title}</div>
+            </div>
+            <p style="text-align: center; color: #64748b; padding: 40px;">No ${currentValuation.toUpperCase()} data available for the last year</p>
+        `;
+        return;
+    }
+
     const svg = createSVG('valuation-chart', title);
     const { chartWidth, chartHeight } = getChartDimensions();
 
     const values = data.map(d => d[valueKey]);
-    const { min, max, range } = getDataRange(values);
+    const { min, max, range} = getDataRange(values);
 
     drawAxes(svg, chartWidth, chartHeight, min, max, data);
     drawLine(svg, data, valueKey, min, range, chartWidth, chartHeight, color);
@@ -158,10 +187,13 @@ function renderValuationChart() {
 
 // RSI Chart
 function renderRSIChart() {
-    const data = historicalData.rsi_data;
+    const allData = historicalData.rsi_data;
+    if (!allData || allData.length === 0) return;
+
+    const data = filterToOneYear(allData);
     if (!data || data.length === 0) return;
 
-    const svg = createSVG('rsi-chart', 'RSI (14 days) vs Time');
+    const svg = createSVG('rsi-chart', 'RSI (14 days) vs Time (1 Year)');
     const { chartWidth, chartHeight } = getChartDimensions();
 
     const min = 0;
@@ -175,6 +207,51 @@ function renderRSIChart() {
     drawThresholdLine(svg, rsiOverbought, min, range, chartWidth, chartHeight, '#22c55e', 'Overbought');
 
     drawLine(svg, data, 'rsi', min, range, chartWidth, chartHeight, '#8b5cf6');
+
+    // Add crosshair line
+    const crosshair = createLine(0, PADDING.top, 0, PADDING.top + chartHeight, '#64748b', 1);
+    crosshair.setAttribute('class', 'crosshair-line');
+    crosshair.style.display = 'none';
+    svg.appendChild(crosshair);
+    globalCrosshairLines.push(crosshair);
+}
+
+// Revenue Growth Chart
+function renderRevenueGrowthChart() {
+    const allData = historicalData.revenue_growth_data;
+    if (!allData || allData.length === 0) {
+        document.getElementById('revenue-growth-chart').innerHTML = `
+            <div class="chart-header">
+                <div class="chart-title">TTM YoY Revenue Growth (1 Year)</div>
+            </div>
+            <p style="text-align: center; color: #64748b; padding: 40px;">No revenue growth data available</p>
+        `;
+        return;
+    }
+
+    const data = filterToOneYear(allData);
+    if (!data || data.length === 0) {
+        document.getElementById('revenue-growth-chart').innerHTML = `
+            <div class="chart-header">
+                <div class="chart-title">TTM YoY Revenue Growth (1 Year)</div>
+            </div>
+            <p style="text-align: center; color: #64748b; padding: 40px;">No revenue growth data available for the last year</p>
+        `;
+        return;
+    }
+
+    const svg = createSVG('revenue-growth-chart', 'TTM YoY Revenue Growth (1 Year)');
+    const { chartWidth, chartHeight } = getChartDimensions();
+
+    const growthValues = data.map(d => d.growth_pct);
+    const { min, max, range } = getDataRange(growthValues);
+
+    drawAxes(svg, chartWidth, chartHeight, min, max, data);
+
+    // Draw zero line (0% growth)
+    drawThresholdLine(svg, 0, min, range, chartWidth, chartHeight, '#64748b', '0% Growth');
+
+    drawLine(svg, data, 'growth_pct', min, range, chartWidth, chartHeight, '#ec4899');
 
     // Add crosshair line
     const crosshair = createLine(0, PADDING.top, 0, PADDING.top + chartHeight, '#64748b', 1);
