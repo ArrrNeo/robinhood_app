@@ -731,13 +731,19 @@ function App() {
                     return pos;
                 });
 
-                return {
+                const updatedData = {
                     ...prevData,
                     positions: updatedPositions
                 };
+
+                // Also update localStorage cache so metrics persist after refresh
+                const cacheKey = `${config.cache.local_storage_keys.portfolio_data_prefix}${selectedAccount}`;
+                localStorage.setItem(cacheKey, JSON.stringify(updatedData));
+
+                return updatedData;
             });
 
-            console.log(`✓ Metrics updated for ${ticker} in table`);
+            console.log(`✓ Metrics updated for ${ticker} in table and localStorage`);
         } catch (error) {
             console.error(`Error fetching historical data for ${ticker}:`, error);
             alert(`Failed to fetch data for ${ticker}: ${error.message}`);
