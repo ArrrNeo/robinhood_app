@@ -224,6 +224,13 @@ function App() {
     });
     const [fetchingHistorical, setFetchingHistorical] = useState({});
 
+    // All Accounts page status (passed up from AllAccounts component)
+    const [allAccountsStatus, setAllAccountsStatus] = useState({
+        loading: false,
+        error: null,
+        timestamp: null
+    });
+
     // Group management
     const {
         groups,
@@ -864,13 +871,11 @@ function App() {
                 <div className="px-6 py-4">
                     <div className="flex items-center justify-between mb-4">
                         <h1 className="text-xl font-bold text-white">Portfolio Tracker</h1>
-                        {currentPage !== 'all' && (
-                            <StatusPill
-                                loading={loading}
-                                error={error}
-                                timestamp={portfolioData?.timestamp}
-                            />
-                        )}
+                        <StatusPill
+                            loading={currentPage === 'all' ? allAccountsStatus.loading : loading}
+                            error={currentPage === 'all' ? allAccountsStatus.error : error}
+                            timestamp={currentPage === 'all' ? allAccountsStatus.timestamp : portfolioData?.timestamp}
+                        />
                     </div>
 
                     {/* Main Account Tabs */}
@@ -934,7 +939,7 @@ function App() {
             <main className="flex-1 flex flex-col overflow-hidden">
                 {currentPage === 'all' ? (
                     <div className="p-8 overflow-auto">
-                        <AllAccounts />
+                        <AllAccounts onStatusChange={setAllAccountsStatus} />
                     </div>
                 ) : currentPage === 'portfolio' ? (
                     <>

@@ -192,7 +192,7 @@ const DraggableHeaderCell = ({ id, children, onClick, ...props }) => {
 
 // --- Main AllAccounts Component ---
 
-function AllAccounts() {
+function AllAccounts({ onStatusChange }) {
     const [allAccountsData, setAllAccountsData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -222,6 +222,17 @@ function AllAccounts() {
         assignPositionToGroup,
         organizePositionsByGroups
     } = useGroupManagement('ALL');
+
+    // Notify parent component of status changes
+    useEffect(() => {
+        if (onStatusChange) {
+            onStatusChange({
+                loading,
+                error,
+                timestamp: allAccountsData?.timestamp
+            });
+        }
+    }, [loading, error, allAccountsData?.timestamp, onStatusChange]);
 
     const initialColumns = tableConfig.default_columns;
 
