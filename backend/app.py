@@ -1425,6 +1425,16 @@ def get_historical_metrics(ticker):
             'pe_12m_min': None
         }
 
+@app.route('/api/metrics/<string:ticker>', methods=['GET'])
+def get_ticker_metrics(ticker):
+    """Get historical metrics for a ticker (lightweight endpoint)"""
+    try:
+        metrics = get_historical_metrics(ticker)
+        return jsonify(metrics), 200
+    except Exception as e:
+        print(f"Error getting metrics for {ticker}: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/historical/<string:ticker>', methods=['GET'])
 def get_historical_data(ticker):
     """Fetch and cache 2-year historical data for a ticker"""

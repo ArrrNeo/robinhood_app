@@ -694,33 +694,54 @@ function AllAccounts() {
     const fetchHistoricalData = async (ticker) => {
         setFetchingHistorical(prev => ({ ...prev, [ticker]: true }));
         try {
-            console.log(`[1/4] Fetching historical data for ${ticker}...`);
+            console.log(`[1/3] Fetching historical data for ${ticker}...`);
             const response = await fetch(
                 `${config.api.base_url}${config.api.endpoints.historical}/${ticker}`
             );
             if (!response.ok) {
                 throw new Error(`Failed to fetch historical data for ${ticker}`);
             }
-            const data = await response.json();
-            console.log(`[2/4] Historical data fetched successfully`);
+            await response.json();
+            console.log(`[2/3] Historical data fetched successfully`);
 
-            // Invalidate backend portfolio cache for all accounts (ALL + individual accounts)
-            console.log(`[3/4] Invalidating backend cache for all accounts...`);
-            const accountsToInvalidate = ['ALL', 'INDIVIDUAL', 'ROTH_IRA', 'TRADITIONAL_IRA'];
-            for (const account of accountsToInvalidate) {
-                await fetch(
-                    `${config.api.base_url}/api/cache/invalidate/${account}`,
-                    { method: 'POST' }
-                );
+            // Fetch just the metrics for this ticker (lightweight call)
+            console.log(`[3/3] Fetching metrics for ${ticker}...`);
+            const metricsResponse = await fetch(
+                `${config.api.base_url}/api/metrics/${ticker}`
+            );
+            if (!metricsResponse.ok) {
+                throw new Error(`Failed to fetch metrics for ${ticker}`);
             }
-            console.log(`[3/4] All caches invalidated`);
+            const metrics = await metricsResponse.json();
+            console.log(`[3/3] Metrics fetched:`, metrics);
 
-            // Clear localStorage cache and refresh
-            const cacheKey = `${config.cache.local_storage_keys.portfolio_data_prefix}ALL`;
-            localStorage.removeItem(cacheKey);
-            console.log(`[4/4] Refreshing portfolio data...`);
-            await fetchAllData(false);
-            console.log(`[4/4] Portfolio data refreshed! Metrics for ${ticker} should now be visible.`);
+            // Update the position(s) with this ticker in the current state
+            setAllAccountsData(prevData => {
+                if (!prevData || !prevData.positions) return prevData;
+
+                const updatedPositions = prevData.positions.map(pos => {
+                    if (pos.ticker === ticker) {
+                        // Update this position with the new metrics
+                        return {
+                            ...pos,
+                            current_rsi: metrics.current_rsi,
+                            current_ps: metrics.current_ps,
+                            ps_12m_max: metrics.ps_12m_max,
+                            ps_12m_min: metrics.ps_12m_min,
+                            pe_12m_max: metrics.pe_12m_max,
+                            pe_12m_min: metrics.pe_12m_min
+                        };
+                    }
+                    return pos;
+                });
+
+                return {
+                    ...prevData,
+                    positions: updatedPositions
+                };
+            });
+
+            console.log(`✓ Metrics updated for ${ticker} in table`);
         } catch (error) {
             console.error(`Error fetching historical data for ${ticker}:`, error);
             alert(`Failed to fetch data for ${ticker}: ${error.message}`);
