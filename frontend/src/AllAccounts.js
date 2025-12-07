@@ -923,14 +923,7 @@ function AllAccounts() {
                 )}
 
                 <header className="mb-8">
-                    <div className="flex items-center justify-between mb-2">
-                        <h2 className="text-2xl font-bold text-white">All Accounts Overview</h2>
-                        <StatusPill
-                            loading={loading}
-                            error={error}
-                            timestamp={allAccountsData?.timestamp}
-                        />
-                    </div>
+                    <h2 className="text-2xl font-bold text-white mb-2">All Accounts Overview</h2>
                     <p className="text-gray-400">Combined portfolio view across all account types</p>
                 </header>
 

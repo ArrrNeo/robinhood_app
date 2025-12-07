@@ -864,13 +864,11 @@ function App() {
                 <div className="px-6 py-4">
                     <div className="flex items-center justify-between mb-4">
                         <h1 className="text-xl font-bold text-white">Portfolio Tracker</h1>
-                        {currentPage !== 'all' && (
-                            <StatusPill
-                                loading={loading}
-                                error={error}
-                                timestamp={portfolioData?.timestamp}
-                            />
-                        )}
+                        <StatusPill
+                            loading={loading}
+                            error={error}
+                            timestamp={currentPage === 'all' ? allAccountsData?.timestamp : portfolioData?.timestamp}
+                        />
                     </div>
 
                     {/* Main Account Tabs */}
