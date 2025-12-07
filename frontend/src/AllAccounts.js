@@ -702,6 +702,9 @@ function AllAccounts() {
             }
             const data = await response.json();
             console.log(`Successfully fetched historical data for ${ticker}`);
+
+            // Refresh portfolio data to get updated metrics without full force refresh
+            await fetchAllData(false);
         } catch (error) {
             console.error(`Error fetching historical data for ${ticker}:`, error);
             alert(`Failed to fetch data for ${ticker}: ${error.message}`);
