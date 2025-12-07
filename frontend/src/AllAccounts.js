@@ -39,6 +39,56 @@ const LoginIcon = () => (
     </svg>
 );
 
+const StatusPill = ({ loading, error, timestamp }) => {
+    const getRelativeTime = (ts) => {
+        if (!ts) return null;
+        const now = new Date();
+        const then = new Date(ts);
+        const diffMs = now - then;
+        const diffSec = Math.floor(diffMs / 1000);
+        const diffMin = Math.floor(diffSec / 60);
+        const diffHour = Math.floor(diffMin / 60);
+
+        if (diffSec < 60) return 'just now';
+        if (diffMin < 60) return `${diffMin}m ago`;
+        if (diffHour < 24) return `${diffHour}h ago`;
+        return then.toLocaleDateString();
+    };
+
+    if (error) {
+        return (
+            <div className="flex items-center space-x-2 px-3 py-1.5 bg-red-900/30 border border-red-700 rounded-full text-red-400 text-sm">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+                <span>Error</span>
+            </div>
+        );
+    }
+
+    if (loading) {
+        return (
+            <div className="flex items-center space-x-2 px-3 py-1.5 bg-blue-900/30 border border-blue-700 rounded-full text-blue-400 text-sm">
+                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Loading...</span>
+            </div>
+        );
+    }
+
+    const relativeTime = getRelativeTime(timestamp);
+    return (
+        <div className="flex items-center space-x-2 px-3 py-1.5 bg-green-900/30 border border-green-700 rounded-full text-green-400 text-sm">
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            </svg>
+            <span>{relativeTime || 'Ready'}</span>
+        </div>
+    );
+};
+
 const MetricCardSkeleton = () => (
     <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 animate-pulse">
         <div className="h-4 bg-gray-600 rounded w-3/4 mb-3"></div>
@@ -901,6 +951,11 @@ function AllAccounts() {
                         <button onClick={() => fetchAllData(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" title="Force Refresh">
                             <RefreshIcon />
                         </button>
+                        <StatusPill
+                            loading={loading}
+                            error={error}
+                            timestamp={allAccountsData?.timestamp}
+                        />
                         <div className="relative" ref={settingsRef}>
                             <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="p-2 rounded-full hover:bg-gray-700 transition-colors">
                                 <GearIcon />
