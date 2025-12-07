@@ -816,7 +816,14 @@ function App() {
             {/* Header with Tabs */}
             <header className="bg-black/30 border-b border-gray-700 flex-shrink-0">
                 <div className="px-6 py-4">
-                    <h1 className="text-xl font-bold text-white mb-4">Portfolio Tracker</h1>
+                    <div className="flex items-center justify-between mb-4">
+                        <h1 className="text-xl font-bold text-white">Portfolio Tracker</h1>
+                        <StatusPill
+                            loading={loading}
+                            error={error}
+                            timestamp={currentPage === 'portfolio' ? portfolioData?.timestamp : null}
+                        />
+                    </div>
 
                     {/* Main Account Tabs */}
                     <div className="flex space-x-1 mb-3">
@@ -970,11 +977,6 @@ function App() {
                                     <button onClick={() => fetchData(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" title="Force Refresh">
                                         <RefreshIcon />
                                     </button>
-                                    <StatusPill
-                                        loading={loading}
-                                        error={error}
-                                        timestamp={portfolioData?.timestamp}
-                                    />
                                     <div className="relative" ref={settingsRef}>
                                         <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="p-2 rounded-full hover:bg-gray-700 transition-colors">
                                             <GearIcon />
