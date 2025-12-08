@@ -6,8 +6,9 @@ const API_BASE = 'http://192.168.4.42:5001';
 // State
 let historicalData = null;
 let currentValuation = 'ps';
-let rsiOversold = 30;
-let rsiOverbought = 70;
+let rsiBuyThreshold = 30;      // Below this: Buy target (Green)
+let rsiWarningThreshold = 50;   // Between Buy and Sell: Warning zone (Orange)
+let rsiSellThreshold = 70;      // Above this: Sell target (Red)
 let globalHoverX = null;
 
 // Chart dimensions
@@ -32,13 +33,18 @@ document.querySelectorAll('input[name="valuation"]').forEach(radio => {
     });
 });
 
-document.getElementById('rsi-oversold').addEventListener('change', (e) => {
-    rsiOversold = parseInt(e.target.value);
+document.getElementById('rsi-buy').addEventListener('change', (e) => {
+    rsiBuyThreshold = parseInt(e.target.value);
     renderCharts();
 });
 
-document.getElementById('rsi-overbought').addEventListener('change', (e) => {
-    rsiOverbought = parseInt(e.target.value);
+document.getElementById('rsi-warning').addEventListener('change', (e) => {
+    rsiWarningThreshold = parseInt(e.target.value);
+    renderCharts();
+});
+
+document.getElementById('rsi-sell').addEventListener('change', (e) => {
+    rsiSellThreshold = parseInt(e.target.value);
     renderCharts();
 });
 
@@ -216,11 +222,51 @@ function renderRSIChart() {
 
     drawAxes(svg, chartWidth, chartHeight, min, max, data);
 
-    // Draw threshold lines
-    drawThresholdLine(svg, rsiOversold, min, range, chartWidth, chartHeight, '#ef4444', 'Oversold');
-    drawThresholdLine(svg, rsiOverbought, min, range, chartWidth, chartHeight, '#22c55e', 'Overbought');
+    // Draw background zones for RSI thresholds
+    // Note: In SVG, Y increases downward, so higher RSI values are lower on the screen
+    // Buy zone (RSI < Buy threshold) - Green - BOTTOM of chart
+    const buyZoneY2 = PADDING.top + chartHeight; // Bottom of chart
+    const buyZoneY1 = PADDING.top + chartHeight - (chartHeight * rsiBuyThreshold / range);
+    const buyZone = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    buyZone.setAttribute('x', PADDING.left);
+    buyZone.setAttribute('y', buyZoneY1);
+    buyZone.setAttribute('width', chartWidth);
+    buyZone.setAttribute('height', buyZoneY2 - buyZoneY1);
+    buyZone.setAttribute('fill', 'rgba(16, 185, 129, 0.08)');
+    buyZone.setAttribute('stroke', 'none');
+    svg.appendChild(buyZone);
 
-    drawLine(svg, data, 'rsi', min, range, chartWidth, chartHeight, '#8b5cf6');
+    // Warning zone (Buy threshold <= RSI < Sell threshold) - Orange - MIDDLE of chart
+    const warningZoneY2 = buyZoneY1;
+    const warningZoneY1 = PADDING.top + chartHeight - (chartHeight * rsiSellThreshold / range);
+    const warningZone = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    warningZone.setAttribute('x', PADDING.left);
+    warningZone.setAttribute('y', warningZoneY1);
+    warningZone.setAttribute('width', chartWidth);
+    warningZone.setAttribute('height', warningZoneY2 - warningZoneY1);
+    warningZone.setAttribute('fill', 'rgba(249, 115, 22, 0.08)');
+    warningZone.setAttribute('stroke', 'none');
+    svg.appendChild(warningZone);
+
+    // Sell zone (RSI >= Sell threshold) - Red - TOP of chart
+    const sellZoneY1 = PADDING.top;
+    const sellZoneY2 = warningZoneY1;
+    const sellZone = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    sellZone.setAttribute('x', PADDING.left);
+    sellZone.setAttribute('y', sellZoneY1);
+    sellZone.setAttribute('width', chartWidth);
+    sellZone.setAttribute('height', sellZoneY2 - sellZoneY1);
+    sellZone.setAttribute('fill', 'rgba(239, 68, 68, 0.08)');
+    sellZone.setAttribute('stroke', 'none');
+    svg.appendChild(sellZone);
+
+    // Draw threshold lines with colors
+    drawThresholdLine(svg, rsiBuyThreshold, min, range, chartWidth, chartHeight, '#10b981', 'Buy');
+    drawThresholdLine(svg, rsiWarningThreshold, min, range, chartWidth, chartHeight, '#f97316', 'Warning');
+    drawThresholdLine(svg, rsiSellThreshold, min, range, chartWidth, chartHeight, '#ef4444', 'Sell');
+
+    // Draw RSI line with dynamic color based on value
+    drawRSILineWithZones(svg, data, min, range, chartWidth, chartHeight);
 
     // Add crosshair line
     const crosshair = createLine(0, PADDING.top, 0, PADDING.top + chartHeight, '#64748b', 1);
@@ -593,6 +639,73 @@ function drawLine(svg, data, valueKey, min, range, chartWidth, chartHeight, colo
     });
 
     return path;
+}
+
+// Draw RSI line with zone-based coloring (buy/warning/sell zones)
+function drawRSILineWithZones(svg, data, min, range, chartWidth, chartHeight) {
+    const firstDate = globalDateRange.firstDate;
+    const dateRange = globalDateRange.dateRange;
+
+    // Create line segments with different colors based on RSI value zones
+    data.forEach((d, i) => {
+        if (i === 0) return; // Skip first point
+
+        const prevD = data[i - 1];
+        const date = new Date(d.date);
+        const prevDate = new Date(prevD.date);
+
+        const dateOffset = date - firstDate;
+        const prevDateOffset = prevDate - firstDate;
+
+        const x = PADDING.left + (dateOffset / dateRange) * chartWidth;
+        const prevX = PADDING.left + (prevDateOffset / dateRange) * chartWidth;
+        const y = PADDING.top + chartHeight - ((d.rsi - min) / range) * chartHeight;
+        const prevY = PADDING.top + chartHeight - ((prevD.rsi - min) / range) * chartHeight;
+
+        // Determine color based on current value
+        let color = '#8b5cf6'; // Default purple
+        if (d.rsi < rsiBuyThreshold) {
+            color = '#10b981'; // Green - Buy target
+        } else if (d.rsi < rsiSellThreshold) {
+            color = '#f97316'; // Orange - Warning zone
+        } else {
+            color = '#ef4444'; // Red - Sell target
+        }
+
+        // Draw line segment
+        const line = createLine(prevX, prevY, x, y, color, 2);
+        svg.appendChild(line);
+    });
+
+    // Add circles for hover - positioned by date
+    data.forEach((d, i) => {
+        const date = new Date(d.date);
+        const dateOffset = date - firstDate;
+        const x = PADDING.left + (dateOffset / dateRange) * chartWidth;
+        const y = PADDING.top + chartHeight - ((d.rsi - min) / range) * chartHeight;
+
+        // Determine color based on value
+        let color = '#8b5cf6'; // Default purple
+        if (d.rsi < rsiBuyThreshold) {
+            color = '#10b981'; // Green - Buy target
+        } else if (d.rsi < rsiSellThreshold) {
+            color = '#f97316'; // Orange - Warning zone
+        } else {
+            color = '#ef4444'; // Red - Sell target
+        }
+
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', x);
+        circle.setAttribute('cy', y);
+        circle.setAttribute('r', '3');
+        circle.setAttribute('fill', color);
+        circle.setAttribute('opacity', '0');
+        circle.setAttribute('data-index', i);
+        circle.setAttribute('data-chart', 'rsi');
+        circle.setAttribute('data-date', d.date);
+
+        svg.appendChild(circle);
+    });
 }
 
 function drawThresholdLine(svg, value, min, range, chartWidth, chartHeight, color, label) {

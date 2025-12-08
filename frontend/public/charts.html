@@ -91,6 +91,21 @@
             font-size: 13px;
         }
 
+        .rsi-controls input#rsi-buy {
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .rsi-controls input#rsi-warning {
+            border-color: #f97316;
+            background: rgba(249, 115, 22, 0.1);
+        }
+
+        .rsi-controls input#rsi-sell {
+            border-color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+
         .chart-container {
             background: #1e293b;
             border-radius: 12px;
@@ -189,10 +204,12 @@
                     </label>
                 </div>
                 <div class="rsi-controls">
-                    <label>Oversold:</label>
-                    <input type="number" id="rsi-oversold" value="30" min="0" max="100">
-                    <label>Overbought:</label>
-                    <input type="number" id="rsi-overbought" value="70" min="0" max="100">
+                    <label>Buy:</label>
+                    <input type="number" id="rsi-buy" value="30" min="0" max="100" title="Below this: Buy Target (Green)">
+                    <label>Warning:</label>
+                    <input type="number" id="rsi-warning" value="50" min="0" max="100" title="Between Buy and Sell: Warning Zone (Orange)">
+                    <label>Sell:</label>
+                    <input type="number" id="rsi-sell" value="70" min="0" max="100" title="Above this: Sell Target (Red)">
                 </div>
             </div>
         </div>
