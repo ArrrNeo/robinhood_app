@@ -6,9 +6,9 @@ const API_BASE = 'http://192.168.4.42:5001';
 // State
 let historicalData = null;
 let currentValuation = 'ps';
-let rsiBuyThreshold = 30;      // Below this: Buy target (Green)
-let rsiWarningThreshold = 50;   // Between Buy and Sell: Warning zone (Orange)
-let rsiSellThreshold = 70;      // Above this: Sell target (Red)
+let rsiBuyThreshold = 35;       // Below this: Buy target (Green)
+let rsiWarningThreshold = 65;   // Between Buy and Sell: Warning zone (Orange)
+let rsiSellThreshold = 75;      // Above this: Sell target (Red)
 let globalHoverX = null;
 
 // Chart dimensions
