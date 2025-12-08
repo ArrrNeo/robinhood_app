@@ -1678,6 +1678,91 @@ def get_historical_data(ticker):
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/fetch-all-historical/<string:account_name>', methods=['POST'])
+def fetch_all_historical_data(account_name):
+    """Fetch historical data for ALL positions in an account (long operation)"""
+    try:
+        # Get portfolio data for the account
+        portfolio_response = get_portfolio(account_name)
+        if portfolio_response[1] != 200:
+            return jsonify({"error": f"Failed to get portfolio data for {account_name}"}), 400
+
+        portfolio_data = portfolio_response[0].json if hasattr(portfolio_response[0], 'json') else json.loads(portfolio_response[0].data)
+
+        positions = portfolio_data.get('positions', [])
+        if not positions:
+            return jsonify({"message": "No positions found", "count": 0}), 200
+
+        # Extract unique tickers from positions
+        tickers = set()
+        for pos in positions:
+            if pos.get('ticker') and pos.get('type') not in ['cash', 'option']:
+                tickers.add(pos['ticker'])
+
+        tickers = sorted(list(tickers))
+        total = len(tickers)
+        results = {
+            "total": total,
+            "fetched": 0,
+            "failed": 0,
+            "tickers": [],
+            "errors": {}
+        }
+
+        print(f"\n{'='*60}")
+        print(f"Starting fetch of historical data for ALL positions in {account_name}")
+        print(f"Total unique tickers: {total}")
+        print(f"{'='*60}\n")
+
+        # Fetch historical data for each ticker
+        for idx, ticker in enumerate(tickers, 1):
+            try:
+                print(f"[{idx}/{total}] Fetching historical data for {ticker}...")
+
+                # Call the get_historical_data function with force=true
+                response = get_historical_data(ticker)
+
+                if response[1] == 200:
+                    results["fetched"] += 1
+                    results["tickers"].append({
+                        "ticker": ticker,
+                        "status": "success"
+                    })
+                    print(f"  ✓ {ticker} completed")
+                else:
+                    results["failed"] += 1
+                    results["errors"][ticker] = f"HTTP {response[1]}"
+                    results["tickers"].append({
+                        "ticker": ticker,
+                        "status": "failed",
+                        "error": f"HTTP {response[1]}"
+                    })
+                    print(f"  ✗ {ticker} failed: HTTP {response[1]}")
+
+            except Exception as e:
+                results["failed"] += 1
+                error_msg = str(e)
+                results["errors"][ticker] = error_msg
+                results["tickers"].append({
+                    "ticker": ticker,
+                    "status": "failed",
+                    "error": error_msg
+                })
+                print(f"  ✗ {ticker} failed: {error_msg}")
+
+        print(f"\n{'='*60}")
+        print(f"Historical data fetch complete for {account_name}")
+        print(f"Successful: {results['fetched']}/{total}")
+        print(f"Failed: {results['failed']}/{total}")
+        print(f"{'='*60}\n")
+
+        return jsonify(results), 200
+
+    except Exception as e:
+        print(f"Error in fetch_all_historical_data: {e}")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 # --- Run the App ---
 if __name__ == '__main__':
     # Clean up expired cache on startup

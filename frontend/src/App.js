@@ -223,6 +223,8 @@ function App() {
         return saved !== null ? JSON.parse(saved) : true;
     });
     const [fetchingHistorical, setFetchingHistorical] = useState({});
+    const [fetchingAllHistorical, setFetchingAllHistorical] = useState(false);
+    const [fetchAllStatus, setFetchAllStatus] = useState(null);
 
     // All Accounts page status (passed up from AllAccounts component)
     const [allAccountsStatus, setAllAccountsStatus] = useState({
@@ -759,6 +761,50 @@ function App() {
         }
     };
 
+    const fetchAllHistoricalData = async () => {
+        setFetchingAllHistorical(true);
+        setFetchAllStatus(null);
+        try {
+            console.log(`Starting fetch of historical data for all positions in ${selectedAccount}...`);
+            const response = await fetch(
+                `${config.api.base_url}/api/fetch-all-historical/${selectedAccount}`,
+                { method: 'POST' }
+            );
+            if (!response.ok) {
+                throw new Error(`Failed to fetch all historical data: HTTP ${response.status}`);
+            }
+            const results = await response.json();
+            console.log(`Fetch all completed:`, results);
+
+            setFetchAllStatus({
+                success: true,
+                total: results.total,
+                fetched: results.fetched,
+                failed: results.failed,
+                details: results.tickers
+            });
+
+            // Auto-hide success message after 10 seconds
+            setTimeout(() => {
+                setFetchAllStatus(null);
+            }, 10000);
+
+            // Refresh portfolio data to get updated metrics
+            if (selectedAccount) {
+                console.log(`Refreshing portfolio data after fetch-all...`);
+                await fetchPortfolioData(selectedAccount);
+            }
+        } catch (error) {
+            console.error(`Error fetching all historical data:`, error);
+            setFetchAllStatus({
+                success: false,
+                error: error.message
+            });
+        } finally {
+            setFetchingAllHistorical(false);
+        }
+    };
+
     const generatePositionCells = (pos) => {
         const isOption = pos.type === 'option';
         const isCash = pos.type === 'cash';
@@ -955,6 +1001,24 @@ function App() {
                                     {loginMessage.text}
                                 </div>
                             )}
+                            {fetchAllStatus && (
+                                <div className={`p-4 rounded-lg mb-6 border ${fetchAllStatus.success ? 'bg-blue-900/50 text-blue-200 border-blue-700' : 'bg-red-900/50 text-red-200 border-red-700'}`}>
+                                    {fetchAllStatus.success ? (
+                                        <div>
+                                            <p className="font-semibold">✓ Historical data fetch complete!</p>
+                                            <p className="text-sm mt-1">
+                                                {fetchAllStatus.fetched}/{fetchAllStatus.total} tickers fetched successfully
+                                                {fetchAllStatus.failed > 0 && ` (${fetchAllStatus.failed} failed)`}
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            <p className="font-semibold">✗ Fetch failed</p>
+                                            <p className="text-sm mt-1">{fetchAllStatus.error}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             <header className="mb-8">
                                 <h2 className="text-2xl font-bold text-white capitalize">{selectedAccount.replace(/_/g, ' ')} Overview</h2>
@@ -1029,6 +1093,14 @@ function App() {
                                     </button>
                                     <button onClick={() => fetchData(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" title="Force Refresh">
                                         <RefreshIcon />
+                                    </button>
+                                    <button
+                                        onClick={fetchAllHistoricalData}
+                                        disabled={fetchingAllHistorical}
+                                        className="p-2 rounded-full hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Fetch all historical data (long operation)"
+                                    >
+                                        <span className="text-lg">📊</span>
                                     </button>
                                     <div className="relative" ref={settingsRef}>
                                         <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="p-2 rounded-full hover:bg-gray-700 transition-colors">
