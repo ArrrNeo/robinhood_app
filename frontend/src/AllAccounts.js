@@ -1102,11 +1102,11 @@ function AllAccounts({ onStatusChange }) {
                                 onChange={(e) => setShowGroups(e.target.checked)}
                                 className="form-checkbox h-4 w-4 bg-gray-700 border-gray-500 rounded text-blue-500 focus:ring-offset-0 focus:ring-2 focus:ring-blue-500"
                             />
-                            <span className="text-base text-gray-300">Show Groups</span>
+                            <span className="text-lg text-gray-300">Show Groups</span>
                         </label>
                         <div className="flex items-center space-x-3 pl-4 border-l border-gray-600">
                             <div className="flex items-center space-x-1">
-                                <label className="text-sm text-gray-400">Buy:</label>
+                                <label className="text-base text-gray-400">Buy:</label>
                                 <input
                                     type="number"
                                     value={rsiPositionBuy}
@@ -1133,7 +1133,7 @@ function AllAccounts({ onStatusChange }) {
                                 />
                             </div>
                             <div className="flex items-center space-x-1">
-                                <label className="text-sm text-gray-400">Warn:</label>
+                                <label className="text-base text-gray-400">Warn:</label>
                                 <input
                                     type="number"
                                     value={rsiPositionWarning}
@@ -1160,7 +1160,7 @@ function AllAccounts({ onStatusChange }) {
                                 />
                             </div>
                             <div className="flex items-center space-x-1">
-                                <label className="text-sm text-gray-400">Sell:</label>
+                                <label className="text-base text-gray-400">Sell:</label>
                                 <input
                                     type="number"
                                     value={rsiPositionSell}
