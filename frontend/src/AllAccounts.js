@@ -970,11 +970,20 @@ function AllAccounts({ onStatusChange }) {
 
         const rsi = pos.current_rsi;
 
+        // 0-35: Buy (Green)
         if (rsi < rsiPositionBuy) {
             return 'bg-green-950/30'; // Buy target zone - dark green
-        } else if (rsi < rsiPositionSell) {
-            return 'bg-yellow-950/30'; // Warning zone - dark orange/yellow
-        } else {
+        }
+        // 35-65: Neutral (No color)
+        else if (rsi < rsiPositionWarning) {
+            return ''; // Neutral zone - no color
+        }
+        // 65-75: Warning (Orange)
+        else if (rsi < rsiPositionSell) {
+            return 'bg-orange-950/30'; // Warning zone - dark orange
+        }
+        // 75+: Sell (Red)
+        else {
             return 'bg-red-950/30'; // Sell target zone - dark red
         }
     };
@@ -1102,14 +1111,25 @@ function AllAccounts({ onStatusChange }) {
                                     type="number"
                                     value={rsiPositionBuy}
                                     onChange={(e) => {
+                                        const val = parseInt(e.target.value);
+                                        if (!isNaN(val)) setRsiPositionBuy(val);
+                                    }}
+                                    onBlur={(e) => {
                                         const val = parseInt(e.target.value) || 0;
                                         setRsiPositionBuy(val);
                                         localStorage.setItem('rsi-position-buy', val.toString());
                                     }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            const val = parseInt(e.target.value) || 0;
+                                            setRsiPositionBuy(val);
+                                            localStorage.setItem('rsi-position-buy', val.toString());
+                                        }
+                                    }}
                                     min="0"
                                     max="100"
                                     className="w-12 px-2 py-1 text-xs bg-gray-800 border border-green-600 text-green-400 rounded"
-                                    title="Buy threshold - RSI below this is buy target (green)"
+                                    title="Buy threshold - Press Enter or Tab to apply"
                                 />
                             </div>
                             <div className="flex items-center space-x-1">
@@ -1118,14 +1138,25 @@ function AllAccounts({ onStatusChange }) {
                                     type="number"
                                     value={rsiPositionWarning}
                                     onChange={(e) => {
+                                        const val = parseInt(e.target.value);
+                                        if (!isNaN(val)) setRsiPositionWarning(val);
+                                    }}
+                                    onBlur={(e) => {
                                         const val = parseInt(e.target.value) || 0;
                                         setRsiPositionWarning(val);
                                         localStorage.setItem('rsi-position-warning', val.toString());
                                     }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            const val = parseInt(e.target.value) || 0;
+                                            setRsiPositionWarning(val);
+                                            localStorage.setItem('rsi-position-warning', val.toString());
+                                        }
+                                    }}
                                     min="0"
                                     max="100"
-                                    className="w-12 px-2 py-1 text-xs bg-gray-800 border border-yellow-600 text-yellow-400 rounded"
-                                    title="Warning threshold - RSI in warning zone (orange)"
+                                    className="w-12 px-2 py-1 text-xs bg-gray-800 border border-orange-600 text-orange-400 rounded"
+                                    title="Warning threshold - Press Enter or Tab to apply"
                                 />
                             </div>
                             <div className="flex items-center space-x-1">
@@ -1134,14 +1165,25 @@ function AllAccounts({ onStatusChange }) {
                                     type="number"
                                     value={rsiPositionSell}
                                     onChange={(e) => {
+                                        const val = parseInt(e.target.value);
+                                        if (!isNaN(val)) setRsiPositionSell(val);
+                                    }}
+                                    onBlur={(e) => {
                                         const val = parseInt(e.target.value) || 0;
                                         setRsiPositionSell(val);
                                         localStorage.setItem('rsi-position-sell', val.toString());
                                     }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            const val = parseInt(e.target.value) || 0;
+                                            setRsiPositionSell(val);
+                                            localStorage.setItem('rsi-position-sell', val.toString());
+                                        }
+                                    }}
                                     min="0"
                                     max="100"
                                     className="w-12 px-2 py-1 text-xs bg-gray-800 border border-red-600 text-red-400 rounded"
-                                    title="Sell threshold - RSI above this is sell target (red)"
+                                    title="Sell threshold - Press Enter or Tab to apply"
                                 />
                             </div>
                         </div>
