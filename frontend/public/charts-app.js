@@ -18,6 +18,9 @@ const PADDING = { top: 40, right: 80, bottom: 50, left: 80 };
 // Global crosshair lines
 let globalCrosshairLines = [];
 
+// Global date range (based on filtered 1-year price data) - used by all charts
+let globalDateRange = null;
+
 // Initialize
 document.getElementById('ticker').textContent = ticker || 'N/A';
 
@@ -74,11 +77,23 @@ function filterToOneYear(data) {
 function renderCharts() {
     if (!historicalData) return;
 
+    // Initialize global date range based on filtered 1-year price data
+    // This ensures all charts use the same x-axis scale
+    const allPriceData = historicalData.price_data;
+    const filteredPriceData = filterToOneYear(allPriceData);
+
+    if (filteredPriceData && filteredPriceData.length > 0) {
+        globalDateRange = {
+            firstDate: new Date(filteredPriceData[0].date),
+            lastDate: new Date(filteredPriceData[filteredPriceData.length - 1].date)
+        };
+        globalDateRange.dateRange = globalDateRange.lastDate - globalDateRange.firstDate;
+    }
+
     const html = `
         <div class="chart-container" id="price-chart"></div>
         <div class="chart-container" id="valuation-chart"></div>
         <div class="chart-container" id="rsi-chart"></div>
-        <div class="chart-container" id="revenue-growth-chart"></div>
     `;
 
     document.getElementById('content').innerHTML = html;
@@ -86,7 +101,6 @@ function renderCharts() {
     renderPriceChart();
     renderValuationChart();
     renderRSIChart();
-    renderRevenueGrowthChart();
     setupGlobalHover();
 }
 
@@ -267,14 +281,7 @@ function setupGlobalHover() {
     const allSvgs = document.querySelectorAll('.chart-svg');
     const { chartWidth, chartHeight } = getChartDimensions();
     const allPriceData = historicalData.price_data;
-
-    // Get date range from filtered 1-year price data, not full historical data
-    const priceData = filterToOneYear(allPriceData);
-
-    // Get date range for date-based positioning
-    const firstDate = new Date(priceData[0].date);
-    const lastDate = new Date(priceData[priceData.length - 1].date);
-    const dateRange = lastDate - firstDate;
+    const filteredPriceData = filterToOneYear(allPriceData);
 
     allSvgs.forEach(svg => {
         svg.addEventListener('mousemove', (e) => {
@@ -288,31 +295,30 @@ function setupGlobalHover() {
                 return;
             }
 
-            // Convert mouse position to date
+            // Convert mouse position to date using global date range
             const chartX = mouseX - PADDING.left;
-            const dateAtPosition = new Date(firstDate.getTime() + (dateRange * (chartX / chartWidth)));
+            const dateAtPosition = new Date(globalDateRange.firstDate.getTime() + (globalDateRange.dateRange * (chartX / chartWidth)));
 
-            // Find closest data point to this date
-            let closestIndex = 0;
-            let minDiff = Math.abs(new Date(priceData[0].date) - dateAtPosition);
+            // Find closest data point to this date in the filtered price data
+            let closestDate = null;
+            let minDiff = Infinity;
 
-            for (let j = 1; j < priceData.length; j++) {
-                const diff = Math.abs(new Date(priceData[j].date) - dateAtPosition);
+            for (let j = 0; j < filteredPriceData.length; j++) {
+                const diff = Math.abs(new Date(filteredPriceData[j].date) - dateAtPosition);
                 if (diff < minDiff) {
                     minDiff = diff;
-                    closestIndex = j;
+                    closestDate = filteredPriceData[j].date;
                 }
             }
 
-            if (closestIndex >= 0 && closestIndex < priceData.length) {
+            if (closestDate) {
                 // Position crosshair at the actual data point (using date-based positioning)
-                const dataDate = new Date(priceData[closestIndex].date);
-                const dateOffset = dataDate - firstDate;
-                const x = PADDING.left + (dateOffset / dateRange) * chartWidth;
+                const dateOffset = new Date(closestDate) - globalDateRange.firstDate;
+                const x = PADDING.left + (dateOffset / globalDateRange.dateRange) * chartWidth;
                 globalHoverX = x;
                 updateAllCrosshairs(x);
-                updateAllLegends(closestIndex);
-                highlightPoints(closestIndex);
+                updateAllLegends(closestDate);
+                highlightPoints(closestDate);
             }
         });
 
@@ -342,8 +348,8 @@ function hideAllCrosshairs() {
     });
 }
 
-function highlightPoints(priceIndex) {
-    const targetDate = historicalData.price_data[priceIndex].date;
+function highlightPoints(targetDate) {
+    // targetDate is now a date string, not an index
 
     document.querySelectorAll('circle').forEach(circle => {
         const circleDate = circle.getAttribute('data-date');
@@ -387,49 +393,73 @@ function highlightPoints(priceIndex) {
     });
 }
 
-function updateAllLegends(priceIndex) {
-    if (priceIndex === null) {
+function updateAllLegends(hoveredDate) {
+    if (hoveredDate === null) {
         document.getElementById('price-chart-legend').textContent = '';
         document.getElementById('valuation-chart-legend').textContent = '';
         document.getElementById('rsi-chart-legend').textContent = '';
         return;
     }
 
-    // Price
-    const priceData = historicalData.price_data[priceIndex];
-    if (priceData) {
-        document.getElementById('price-chart-legend').textContent =
-            `${priceData.date} | Price: $${priceData.price.toFixed(2)}`;
+    // Price - find closest price data to hovered date
+    const priceData = historicalData.price_data;
+    let closestPrice = null;
+    let minDiff = Infinity;
+
+    for (let i = 0; i < priceData.length; i++) {
+        const diff = Math.abs(new Date(priceData[i].date) - new Date(hoveredDate));
+        if (diff < minDiff) {
+            minDiff = diff;
+            closestPrice = priceData[i];
+        }
     }
 
-    // Valuation
+    if (closestPrice) {
+        document.getElementById('price-chart-legend').textContent =
+            `${closestPrice.date} | Price: $${closestPrice.price.toFixed(2)}`;
+    }
+
+    // Valuation - find closest valuation data to hovered date
     const dataKey = currentValuation === 'ps' ? 'ps_data' : 'pe_data';
     const valueKey = currentValuation === 'ps' ? 'ps_ratio' : 'pe_ratio';
     const valuationData = historicalData[dataKey];
 
     if (valuationData && valuationData.length > 0) {
-        // Find closest date to the hovered price date
-        const targetDate = historicalData.price_data[priceIndex].date;
-        const closest = valuationData.reduce((prev, curr) => {
-            return Math.abs(new Date(curr.date) - new Date(targetDate)) <
-                   Math.abs(new Date(prev.date) - new Date(targetDate)) ? curr : prev;
-        });
+        let closest = null;
+        let minDiff = Infinity;
 
-        document.getElementById('valuation-chart-legend').textContent =
-            `${closest.date} | ${currentValuation.toUpperCase()}: ${closest[valueKey].toFixed(2)}`;
+        for (let i = 0; i < valuationData.length; i++) {
+            const diff = Math.abs(new Date(valuationData[i].date) - new Date(hoveredDate));
+            if (diff < minDiff) {
+                minDiff = diff;
+                closest = valuationData[i];
+            }
+        }
+
+        if (closest) {
+            document.getElementById('valuation-chart-legend').textContent =
+                `${closest.date} | ${currentValuation.toUpperCase()}: ${closest[valueKey].toFixed(2)}`;
+        }
     }
 
-    // RSI
+    // RSI - find closest RSI data to hovered date
     const rsiData = historicalData.rsi_data;
     if (rsiData && rsiData.length > 0) {
-        const targetDate = historicalData.price_data[priceIndex].date;
-        const closest = rsiData.reduce((prev, curr) => {
-            return Math.abs(new Date(curr.date) - new Date(targetDate)) <
-                   Math.abs(new Date(prev.date) - new Date(targetDate)) ? curr : prev;
-        });
+        let closest = null;
+        let minDiff = Infinity;
 
-        document.getElementById('rsi-chart-legend').textContent =
-            `${closest.date} | RSI: ${closest.rsi.toFixed(1)}`;
+        for (let i = 0; i < rsiData.length; i++) {
+            const diff = Math.abs(new Date(rsiData[i].date) - new Date(hoveredDate));
+            if (diff < minDiff) {
+                minDiff = diff;
+                closest = rsiData[i];
+            }
+        }
+
+        if (closest) {
+            document.getElementById('rsi-chart-legend').textContent =
+                `${closest.date} | RSI: ${closest.rsi.toFixed(1)}`;
+        }
     }
 }
 
@@ -477,38 +507,35 @@ function drawAxes(svg, chartWidth, chartHeight, min, max, data) {
         g.appendChild(label);
     }
 
-    // X-axis ticks - use date-based positioning to match drawLine function
-    // Use the filtered data's date range, not the full price data range
-    const firstDate = new Date(data[0].date);
-    const lastDate = new Date(data[data.length - 1].date);
-    const dateRange = lastDate - firstDate;
-
+    // X-axis ticks - use global date range (same for all charts)
     const xTicks = 6;
     for (let i = 0; i < xTicks; i++) {
-        // Calculate date at this position
-        const dateAtPosition = new Date(firstDate.getTime() + (dateRange * (i / (xTicks - 1))));
+        // Calculate date at this position based on global date range
+        const dateAtPosition = new Date(globalDateRange.firstDate.getTime() + (globalDateRange.dateRange * (i / (xTicks - 1))));
 
-        // Find the closest data point to this date
-        let closestIndex = 0;
-        let minDiff = Math.abs(new Date(data[0].date) - dateAtPosition);
+        // Find the closest data point to this date (from ALL data, not just filtered)
+        let closestEntry = null;
+        let minDiff = Infinity;
 
-        for (let j = 1; j < data.length; j++) {
+        for (let j = 0; j < data.length; j++) {
             const diff = Math.abs(new Date(data[j].date) - dateAtPosition);
             if (diff < minDiff) {
                 minDiff = diff;
-                closestIndex = j;
+                closestEntry = data[j];
             }
         }
 
-        // Position tick using date-based calculation (matching drawLine)
-        const tickDate = new Date(data[closestIndex].date);
-        const dateOffset = tickDate - firstDate;
-        const x = PADDING.left + (dateOffset / dateRange) * chartWidth;
+        // If no data point near this position, show the calculated date anyway
+        const displayDate = closestEntry ? closestEntry.date : dateAtPosition.toISOString().split('T')[0];
+
+        // Position tick using global date range
+        const dateOffset = dateAtPosition - globalDateRange.firstDate;
+        const x = PADDING.left + (dateOffset / globalDateRange.dateRange) * chartWidth;
 
         const tick = createLine(x, PADDING.top + chartHeight, x, PADDING.top + chartHeight + 5, '#475569', 1);
         g.appendChild(tick);
 
-        const label = createText(x, PADDING.top + chartHeight + 20, data[closestIndex].date, '#94a3b8', 10, 'middle');
+        const label = createText(x, PADDING.top + chartHeight + 20, displayDate, '#94a3b8', 10, 'middle');
         g.appendChild(label);
     }
 
@@ -524,10 +551,9 @@ function drawLine(svg, data, valueKey, min, range, chartWidth, chartHeight, colo
         chartType = 'rsi';
     }
 
-    // Get date range from the filtered data (1-year), not full price data
-    const firstDate = new Date(data[0].date);
-    const lastDate = new Date(data[data.length - 1].date);
-    const dateRange = lastDate - firstDate;
+    // Use global date range (same for all charts)
+    const firstDate = globalDateRange.firstDate;
+    const dateRange = globalDateRange.dateRange;
 
     // Convert dates to X positions and draw line
     const points = data.map((d, i) => {
