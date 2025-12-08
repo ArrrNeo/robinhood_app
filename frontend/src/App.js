@@ -226,6 +226,20 @@ function App() {
     const [fetchingAllHistorical, setFetchingAllHistorical] = useState(false);
     const [fetchAllStatus, setFetchAllStatus] = useState(null);
 
+    // RSI thresholds for position row coloring
+    const [rsiPositionBuy, setRsiPositionBuy] = useState(() => {
+        const saved = localStorage.getItem(config.cache.local_storage_keys.rsi_position_buy);
+        return saved !== null ? parseInt(saved) : 35;
+    });
+    const [rsiPositionWarning, setRsiPositionWarning] = useState(() => {
+        const saved = localStorage.getItem(config.cache.local_storage_keys.rsi_position_warning);
+        return saved !== null ? parseInt(saved) : 65;
+    });
+    const [rsiPositionSell, setRsiPositionSell] = useState(() => {
+        const saved = localStorage.getItem(config.cache.local_storage_keys.rsi_position_sell);
+        return saved !== null ? parseInt(saved) : 75;
+    });
+
     // All Accounts page status (passed up from AllAccounts component)
     const [allAccountsStatus, setAllAccountsStatus] = useState({
         loading: false,
@@ -539,6 +553,19 @@ function App() {
     useEffect(() => {
         localStorage.setItem(config.cache.local_storage_keys.current_page, currentPage);
     }, [currentPage]);
+
+    // Save RSI thresholds to localStorage
+    useEffect(() => {
+        localStorage.setItem(config.cache.local_storage_keys.rsi_position_buy, rsiPositionBuy.toString());
+    }, [rsiPositionBuy]);
+
+    useEffect(() => {
+        localStorage.setItem(config.cache.local_storage_keys.rsi_position_warning, rsiPositionWarning.toString());
+    }, [rsiPositionWarning]);
+
+    useEffect(() => {
+        localStorage.setItem(config.cache.local_storage_keys.rsi_position_sell, rsiPositionSell.toString());
+    }, [rsiPositionSell]);
 
     // Fetch global notes (ticker-based, not account-based)
     const fetchGlobalNotes = useCallback(async () => {
@@ -878,12 +905,30 @@ function App() {
         };
     };
 
+    const getPositionRowBackgroundColor = (pos) => {
+        // Return background color based on RSI value and thresholds
+        if (pos.type === 'cash' || pos.type === 'option' || pos.current_rsi == null) {
+            return ''; // No coloring for cash, options, or positions without RSI data
+        }
+
+        const rsi = pos.current_rsi;
+
+        if (rsi < rsiPositionBuy) {
+            return 'bg-green-950/30'; // Buy target zone - dark green
+        } else if (rsi < rsiPositionSell) {
+            return 'bg-yellow-950/30'; // Warning zone - dark orange/yellow
+        } else {
+            return 'bg-red-950/30'; // Sell target zone - dark red
+        }
+    };
+
     const renderPositionRow = (pos) => {
         const cells = generatePositionCells(pos);
         const isOption = pos.type === 'option';
+        const rowBgColor = getPositionRowBackgroundColor(pos);
 
         return (
-            <tr key={isOption ? `${pos.ticker}-${pos.expiry}-${pos.strike}-${pos.option_type}` : pos.ticker} className="border-b border-gray-700 last:border-b-0 hover:bg-gray-700/50 transition-colors">
+            <tr key={isOption ? `${pos.ticker}-${pos.expiry}-${pos.strike}-${pos.option_type}` : pos.ticker} className={`border-b border-gray-700 last:border-b-0 hover:bg-gray-700/50 transition-colors ${rowBgColor}`}>
                 {columnOrder.map(key => {
                     const { visible } = columns[key];
                     return visible ? React.cloneElement(cells[key], { key }) : null
@@ -1073,6 +1118,44 @@ function App() {
                                         />
                                         <span className="text-sm text-gray-300">Show Groups</span>
                                     </label>
+                                    <div className="flex items-center space-x-3 pl-4 border-l border-gray-600">
+                                        <div className="flex items-center space-x-1">
+                                            <label className="text-xs text-gray-400">Buy:</label>
+                                            <input
+                                                type="number"
+                                                value={rsiPositionBuy}
+                                                onChange={(e) => setRsiPositionBuy(parseInt(e.target.value) || 0)}
+                                                min="0"
+                                                max="100"
+                                                className="w-12 px-2 py-1 text-xs bg-gray-800 border border-green-600 text-green-400 rounded"
+                                                title="Buy threshold - RSI below this is buy target (green)"
+                                            />
+                                        </div>
+                                        <div className="flex items-center space-x-1">
+                                            <label className="text-xs text-gray-400">Warn:</label>
+                                            <input
+                                                type="number"
+                                                value={rsiPositionWarning}
+                                                onChange={(e) => setRsiPositionWarning(parseInt(e.target.value) || 0)}
+                                                min="0"
+                                                max="100"
+                                                className="w-12 px-2 py-1 text-xs bg-gray-800 border border-yellow-600 text-yellow-400 rounded"
+                                                title="Warning threshold - RSI in warning zone (orange)"
+                                            />
+                                        </div>
+                                        <div className="flex items-center space-x-1">
+                                            <label className="text-xs text-gray-400">Sell:</label>
+                                            <input
+                                                type="number"
+                                                value={rsiPositionSell}
+                                                onChange={(e) => setRsiPositionSell(parseInt(e.target.value) || 0)}
+                                                min="0"
+                                                max="100"
+                                                className="w-12 px-2 py-1 text-xs bg-gray-800 border border-red-600 text-red-400 rounded"
+                                                title="Sell threshold - RSI above this is sell target (red)"
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
                                 <div className="flex items-center space-x-2">
                                     <button

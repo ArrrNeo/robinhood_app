@@ -21,7 +21,10 @@
       "selected_account": "selectedAccount",
       "current_page": "currentPage",
       "portfolio_data_prefix": "portfolio-data-",
-      "historical_data_prefix": "historical-data-"
+      "historical_data_prefix": "historical-data-",
+      "rsi_position_buy": "rsi-position-buy",
+      "rsi_position_warning": "rsi-position-warning",
+      "rsi_position_sell": "rsi-position-sell"
     }
   }
 }

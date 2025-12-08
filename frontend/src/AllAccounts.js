@@ -211,6 +211,21 @@ function AllAccounts({ onStatusChange }) {
     const [fetchingHistorical, setFetchingHistorical] = useState({});
     const [fetchingAllHistorical, setFetchingAllHistorical] = useState(false);
     const [fetchAllStatus, setFetchAllStatus] = useState(null);
+
+    // RSI thresholds for position row coloring (shared from App.js or local state)
+    const [rsiPositionBuy, setRsiPositionBuy] = useState(() => {
+        const saved = localStorage.getItem('rsi-position-buy');
+        return saved !== null ? parseInt(saved) : 35;
+    });
+    const [rsiPositionWarning, setRsiPositionWarning] = useState(() => {
+        const saved = localStorage.getItem('rsi-position-warning');
+        return saved !== null ? parseInt(saved) : 65;
+    });
+    const [rsiPositionSell, setRsiPositionSell] = useState(() => {
+        const saved = localStorage.getItem('rsi-position-sell');
+        return saved !== null ? parseInt(saved) : 75;
+    });
+
     const settingsRef = useRef(null);
 
     // Group management for ALL account
@@ -947,11 +962,29 @@ function AllAccounts({ onStatusChange }) {
     }, [groups, handleAssignPosition, handleSaveCell, fetchingHistorical]);
 
     // Render a full position row
+    const getPositionRowBackgroundColor = (pos) => {
+        // Return background color based on RSI value and thresholds
+        if (pos.type === 'cash' || pos.type === 'option' || pos.current_rsi == null) {
+            return ''; // No coloring for cash, options, or positions without RSI data
+        }
+
+        const rsi = pos.current_rsi;
+
+        if (rsi < rsiPositionBuy) {
+            return 'bg-green-950/30'; // Buy target zone - dark green
+        } else if (rsi < rsiPositionSell) {
+            return 'bg-yellow-950/30'; // Warning zone - dark orange/yellow
+        } else {
+            return 'bg-red-950/30'; // Sell target zone - dark red
+        }
+    };
+
     const renderPositionRow = useCallback((pos) => {
         const cells = generatePositionCells(pos);
+        const rowBgColor = getPositionRowBackgroundColor(pos);
 
         return (
-            <tr key={pos.id || pos.ticker} className="border-b border-gray-700 last:border-b-0 hover:bg-gray-700/50 transition-colors">
+            <tr key={pos.id || pos.ticker} className={`border-b border-gray-700 last:border-b-0 hover:bg-gray-700/50 transition-colors ${rowBgColor}`}>
                 {columnOrder.map(key => {
                     const { visible } = columns[key];
                     return visible ? React.cloneElement(cells[key], { key }) : null
@@ -1062,6 +1095,56 @@ function AllAccounts({ onStatusChange }) {
                             />
                             <span className="text-sm text-gray-300">Show Groups</span>
                         </label>
+                        <div className="flex items-center space-x-3 pl-4 border-l border-gray-600">
+                            <div className="flex items-center space-x-1">
+                                <label className="text-xs text-gray-400">Buy:</label>
+                                <input
+                                    type="number"
+                                    value={rsiPositionBuy}
+                                    onChange={(e) => {
+                                        const val = parseInt(e.target.value) || 0;
+                                        setRsiPositionBuy(val);
+                                        localStorage.setItem('rsi-position-buy', val.toString());
+                                    }}
+                                    min="0"
+                                    max="100"
+                                    className="w-12 px-2 py-1 text-xs bg-gray-800 border border-green-600 text-green-400 rounded"
+                                    title="Buy threshold - RSI below this is buy target (green)"
+                                />
+                            </div>
+                            <div className="flex items-center space-x-1">
+                                <label className="text-xs text-gray-400">Warn:</label>
+                                <input
+                                    type="number"
+                                    value={rsiPositionWarning}
+                                    onChange={(e) => {
+                                        const val = parseInt(e.target.value) || 0;
+                                        setRsiPositionWarning(val);
+                                        localStorage.setItem('rsi-position-warning', val.toString());
+                                    }}
+                                    min="0"
+                                    max="100"
+                                    className="w-12 px-2 py-1 text-xs bg-gray-800 border border-yellow-600 text-yellow-400 rounded"
+                                    title="Warning threshold - RSI in warning zone (orange)"
+                                />
+                            </div>
+                            <div className="flex items-center space-x-1">
+                                <label className="text-xs text-gray-400">Sell:</label>
+                                <input
+                                    type="number"
+                                    value={rsiPositionSell}
+                                    onChange={(e) => {
+                                        const val = parseInt(e.target.value) || 0;
+                                        setRsiPositionSell(val);
+                                        localStorage.setItem('rsi-position-sell', val.toString());
+                                    }}
+                                    min="0"
+                                    max="100"
+                                    className="w-12 px-2 py-1 text-xs bg-gray-800 border border-red-600 text-red-400 rounded"
+                                    title="Sell threshold - RSI above this is sell target (red)"
+                                />
+                            </div>
+                        </div>
                     </div>
                     <div className="flex items-center space-x-2">
                         <button
