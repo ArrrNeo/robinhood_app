@@ -913,21 +913,21 @@ function App() {
 
         const rsi = pos.current_rsi;
 
-        // 0-35: Buy (Green)
+        // 0-35: Buy (Light Green)
         if (rsi < rsiPositionBuy) {
-            return 'bg-green-950/30'; // Buy target zone - dark green
+            return 'bg-green-900/40'; // Buy target zone - lighter green
         }
         // 35-65: Neutral (No color)
         else if (rsi < rsiPositionWarning) {
             return ''; // Neutral zone - no color
         }
-        // 65-75: Warning (Orange)
+        // 65-75: Warning (Yellow)
         else if (rsi < rsiPositionSell) {
-            return 'bg-orange-950/30'; // Warning zone - dark orange
+            return 'bg-yellow-900/40'; // Warning zone - yellow
         }
-        // 75+: Sell (Red)
+        // 75+: Sell (Light Red)
         else {
-            return 'bg-red-950/30'; // Sell target zone - dark red
+            return 'bg-red-900/40'; // Sell target zone - lighter red
         }
     };
 
