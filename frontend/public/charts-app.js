@@ -266,7 +266,10 @@ function setupGlobalHover() {
     globalCrosshairLines = [];
     const allSvgs = document.querySelectorAll('.chart-svg');
     const { chartWidth, chartHeight } = getChartDimensions();
-    const priceData = historicalData.price_data;
+    const allPriceData = historicalData.price_data;
+
+    // Get date range from filtered 1-year price data, not full historical data
+    const priceData = filterToOneYear(allPriceData);
 
     // Get date range for date-based positioning
     const firstDate = new Date(priceData[0].date);
@@ -475,9 +478,9 @@ function drawAxes(svg, chartWidth, chartHeight, min, max, data) {
     }
 
     // X-axis ticks - use date-based positioning to match drawLine function
-    const priceData = historicalData.price_data;
-    const firstDate = new Date(priceData[0].date);
-    const lastDate = new Date(priceData[priceData.length - 1].date);
+    // Use the filtered data's date range, not the full price data range
+    const firstDate = new Date(data[0].date);
+    const lastDate = new Date(data[data.length - 1].date);
     const dateRange = lastDate - firstDate;
 
     const xTicks = 6;
@@ -521,10 +524,9 @@ function drawLine(svg, data, valueKey, min, range, chartWidth, chartHeight, colo
         chartType = 'rsi';
     }
 
-    // Get date range from price data for consistent X-axis
-    const priceData = historicalData.price_data;
-    const firstDate = new Date(priceData[0].date);
-    const lastDate = new Date(priceData[priceData.length - 1].date);
+    // Get date range from the filtered data (1-year), not full price data
+    const firstDate = new Date(data[0].date);
+    const lastDate = new Date(data[data.length - 1].date);
     const dateRange = lastDate - firstDate;
 
     // Convert dates to X positions and draw line
