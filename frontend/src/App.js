@@ -792,7 +792,7 @@ function App() {
             // Refresh portfolio data to get updated metrics
             if (selectedAccount) {
                 console.log(`Refreshing portfolio data after fetch-all...`);
-                await fetchPortfolioData(selectedAccount);
+                await fetchData(false);
             }
         } catch (error) {
             console.error(`Error fetching all historical data:`, error);

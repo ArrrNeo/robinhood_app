@@ -209,6 +209,8 @@ function AllAccounts({ onStatusChange }) {
         return saved !== null ? JSON.parse(saved) : true;
     });
     const [fetchingHistorical, setFetchingHistorical] = useState({});
+    const [fetchingAllHistorical, setFetchingAllHistorical] = useState(false);
+    const [fetchAllStatus, setFetchAllStatus] = useState(null);
     const settingsRef = useRef(null);
 
     // Group management for ALL account
@@ -653,6 +655,64 @@ function AllAccounts({ onStatusChange }) {
         }
     }, [globalNotes]);
 
+    const fetchAllHistoricalData = async () => {
+        setFetchingAllHistorical(true);
+        setFetchAllStatus(null);
+        try {
+            // Fetch historical data for all accounts
+            // We need to call the endpoint for each account
+            const accountsList = Object.keys(allAccountsData?.accounts || {});
+            const allResults = {
+                total: 0,
+                fetched: 0,
+                failed: 0,
+                tickers: []
+            };
+
+            for (const account of accountsList) {
+                try {
+                    const response = await fetch(
+                        `${config.api.base_url}/api/fetch-all-historical/${account}`,
+                        { method: 'POST' }
+                    );
+                    if (response.ok) {
+                        const results = await response.json();
+                        allResults.total += results.total;
+                        allResults.fetched += results.fetched;
+                        allResults.failed += results.failed;
+                        allResults.tickers.push(...results.tickers);
+                    }
+                } catch (err) {
+                    console.error(`Error fetching all historical data for ${account}:`, err);
+                }
+            }
+
+            setFetchAllStatus({
+                success: true,
+                total: allResults.total,
+                fetched: allResults.fetched,
+                failed: allResults.failed,
+                details: allResults.tickers
+            });
+
+            // Auto-dismiss notification after 10 seconds
+            setTimeout(() => {
+                setFetchAllStatus(null);
+            }, 10000);
+
+            // Refresh all accounts data after completion
+            await fetchAllData();
+        } catch (error) {
+            console.error(`Error fetching all historical data:`, error);
+            setFetchAllStatus({
+                success: false,
+                error: error.message
+            });
+        } finally {
+            setFetchingAllHistorical(false);
+        }
+    };
+
     useEffect(() => {
         // Fetch global notes and data once on mount
         fetchGlobalNotes();
@@ -932,6 +992,21 @@ function AllAccounts({ onStatusChange }) {
                         {loginMessage.text}
                     </div>
                 )}
+                {fetchAllStatus && (
+                    <div className={`p-4 rounded-lg mb-6 border ${fetchAllStatus.success ? 'bg-blue-900/50 text-blue-200 border-blue-700' : 'bg-red-900/50 text-red-200 border-red-700'}`}>
+                        {fetchAllStatus.success ? (
+                            <div>
+                                <p className="font-semibold">✓ Historical data fetch complete!</p>
+                                <p className="text-sm mt-1">Fetched: {fetchAllStatus.fetched}/{fetchAllStatus.total} across all accounts</p>
+                            </div>
+                        ) : (
+                            <div>
+                                <p className="font-semibold">✗ Error fetching historical data</p>
+                                <p className="text-sm mt-1">{fetchAllStatus.error}</p>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 <header className="mb-8">
                     <h2 className="text-2xl font-bold text-white mb-2">All Accounts Overview</h2>
@@ -1007,6 +1082,14 @@ function AllAccounts({ onStatusChange }) {
                         </button>
                         <button onClick={() => fetchAllData(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" title="Force Refresh">
                             <RefreshIcon />
+                        </button>
+                        <button
+                            onClick={fetchAllHistoricalData}
+                            disabled={fetchingAllHistorical}
+                            className="p-2 rounded-full hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Fetch all historical data (long operation)"
+                        >
+                            <span className="text-lg">📊</span>
                         </button>
                         <div className="relative" ref={settingsRef}>
                             <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="p-2 rounded-full hover:bg-gray-700 transition-colors">
