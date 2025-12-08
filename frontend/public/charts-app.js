@@ -268,6 +268,11 @@ function setupGlobalHover() {
     const { chartWidth, chartHeight } = getChartDimensions();
     const priceData = historicalData.price_data;
 
+    // Get date range for date-based positioning
+    const firstDate = new Date(priceData[0].date);
+    const lastDate = new Date(priceData[priceData.length - 1].date);
+    const dateRange = lastDate - firstDate;
+
     allSvgs.forEach(svg => {
         svg.addEventListener('mousemove', (e) => {
             const rect = svg.getBoundingClientRect();
@@ -280,16 +285,31 @@ function setupGlobalHover() {
                 return;
             }
 
+            // Convert mouse position to date
             const chartX = mouseX - PADDING.left;
-            // Always use price_data length as reference since it has all dates
-            const index = Math.round((chartX / chartWidth) * (priceData.length - 1));
+            const dateAtPosition = new Date(firstDate.getTime() + (dateRange * (chartX / chartWidth)));
 
-            if (index >= 0 && index < priceData.length) {
-                const x = PADDING.left + (index / (priceData.length - 1)) * chartWidth;
+            // Find closest data point to this date
+            let closestIndex = 0;
+            let minDiff = Math.abs(new Date(priceData[0].date) - dateAtPosition);
+
+            for (let j = 1; j < priceData.length; j++) {
+                const diff = Math.abs(new Date(priceData[j].date) - dateAtPosition);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    closestIndex = j;
+                }
+            }
+
+            if (closestIndex >= 0 && closestIndex < priceData.length) {
+                // Position crosshair at the actual data point (using date-based positioning)
+                const dataDate = new Date(priceData[closestIndex].date);
+                const dateOffset = dataDate - firstDate;
+                const x = PADDING.left + (dateOffset / dateRange) * chartWidth;
                 globalHoverX = x;
                 updateAllCrosshairs(x);
-                updateAllLegends(index);
-                highlightPoints(index);
+                updateAllLegends(closestIndex);
+                highlightPoints(closestIndex);
             }
         });
 
@@ -454,16 +474,38 @@ function drawAxes(svg, chartWidth, chartHeight, min, max, data) {
         g.appendChild(label);
     }
 
-    // X-axis ticks
+    // X-axis ticks - use date-based positioning to match drawLine function
+    const priceData = historicalData.price_data;
+    const firstDate = new Date(priceData[0].date);
+    const lastDate = new Date(priceData[priceData.length - 1].date);
+    const dateRange = lastDate - firstDate;
+
     const xTicks = 6;
     for (let i = 0; i < xTicks; i++) {
-        const index = Math.floor((data.length - 1) * (i / (xTicks - 1)));
-        const x = PADDING.left + (index / (data.length - 1)) * chartWidth;
+        // Calculate date at this position
+        const dateAtPosition = new Date(firstDate.getTime() + (dateRange * (i / (xTicks - 1))));
+
+        // Find the closest data point to this date
+        let closestIndex = 0;
+        let minDiff = Math.abs(new Date(data[0].date) - dateAtPosition);
+
+        for (let j = 1; j < data.length; j++) {
+            const diff = Math.abs(new Date(data[j].date) - dateAtPosition);
+            if (diff < minDiff) {
+                minDiff = diff;
+                closestIndex = j;
+            }
+        }
+
+        // Position tick using date-based calculation (matching drawLine)
+        const tickDate = new Date(data[closestIndex].date);
+        const dateOffset = tickDate - firstDate;
+        const x = PADDING.left + (dateOffset / dateRange) * chartWidth;
 
         const tick = createLine(x, PADDING.top + chartHeight, x, PADDING.top + chartHeight + 5, '#475569', 1);
         g.appendChild(tick);
 
-        const label = createText(x, PADDING.top + chartHeight + 20, data[index].date, '#94a3b8', 10, 'middle');
+        const label = createText(x, PADDING.top + chartHeight + 20, data[closestIndex].date, '#94a3b8', 10, 'middle');
         g.appendChild(label);
     }
 
