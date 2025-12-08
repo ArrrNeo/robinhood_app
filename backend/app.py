@@ -831,7 +831,7 @@ def get_accounts():
 @app.route('/api/notes', methods=['GET'])
 def get_global_notes():
     """API endpoint to get all global notes (ticker-based)."""
-    notes_dir = os.path.dirname(config['paths']['notes_file'])
+    notes_dir = os.path.join('..', 'user_settings', 'notes')
     os.makedirs(notes_dir, exist_ok=True)
     notes_path = os.path.join(notes_dir, 'global_notes.json')
 
@@ -850,7 +850,7 @@ def update_global_note():
     if not data or 'ticker' not in data or not ('note' in data or 'comment' in data):
         return jsonify({"error": "Invalid payload"}), 400
 
-    notes_dir = os.path.dirname(config['paths']['notes_file'])
+    notes_dir = os.path.join('..', 'user_settings', 'notes')
     os.makedirs(notes_dir, exist_ok=True)
     notes_path = os.path.join(notes_dir, 'global_notes.json')
     notes = {}
@@ -971,7 +971,7 @@ def get_orders(account_name):
 # --- Portfolio Groups Management ---
 def get_groups_file_path(account_name):
     """Get the file path for storing account groups"""
-    groups_dir = os.path.join(config['cache']['cache_directory'], account_name)
+    groups_dir = os.path.join('..', 'user_settings', 'groups', account_name)
     os.makedirs(groups_dir, exist_ok=True)
     return os.path.join(groups_dir, 'portfolio_groups.json')
 
