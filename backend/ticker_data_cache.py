@@ -188,6 +188,29 @@ class TickerDataCache:
         self._save_to_cache(cache_file, data)
         return data
 
+    def get_previous_close(self, ticker):
+        """Get yesterday's closing price with caching"""
+        cache_file = self._get_cache_file(ticker, 'previous_close')
+        cache_minutes = self.settings['previous_close_cache_minutes']
+
+        if self._is_cache_valid(cache_file, cache_minutes=cache_minutes):
+            print(f"Using cached previous close for {ticker}")
+            return self._load_from_cache(cache_file)
+
+        print(f"Fetching fresh previous close for {ticker}")
+        try:
+            # Get the last day's historical data (yesterday's close)
+            historicals = r.get_stock_historicals(ticker, interval='day', span='week')
+            if historicals and len(historicals) >= 2:
+                # [-1] is today's data, [-2] is yesterday's close
+                previous_close = float(historicals[-2]['close_price'])
+                self._save_to_cache(cache_file, previous_close)
+                return previous_close
+            return None
+        except Exception as e:
+            print(f"Error getting previous close price for {ticker}: {e}")
+            return None
+
     def clear_expired_cache(self):
         """Clean up expired cache files"""
         if not os.path.exists(self.cache_dir):
@@ -216,6 +239,8 @@ class TickerDataCache:
                     cache_hours = self.settings['historical_cache_hours']
                 elif data_type == 'revenue_change':
                     cache_hours = self.settings['revenue_cache_hours']
+                elif data_type == 'previous_close':
+                    cache_minutes = self.settings['previous_close_cache_minutes']
 
                 if not self._is_cache_valid(cache_path, cache_hours, cache_minutes):
                     try:
@@ -242,3 +267,6 @@ def get_all_price_changes_cached(ticker, symbol, get_yfinance_ticker_func):
 
 def get_revenue_changes_cached(ticker, symbol, get_yfinance_ticker_func):
     return ticker_cache.get_revenue_change(ticker, symbol, get_yfinance_ticker_func)
+
+def get_previous_close_cached(ticker):
+    return ticker_cache.get_previous_close(ticker)
