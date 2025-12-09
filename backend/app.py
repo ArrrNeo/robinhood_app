@@ -136,6 +136,20 @@ def get_fundamentals(ticker):
 def get_latest_price(ticker):
     return get_latest_price_cached(ticker)
 
+def get_previous_close_price(ticker):
+    """Get yesterday's closing price using Robinhood historicals API"""
+    try:
+        # Get the last day's historical data (yesterday's close)
+        historicals = r.get_stock_historicals(ticker, interval='day', span='week')
+        if historicals and len(historicals) >= 2:
+            # [-1] is yesterday's close, [-2] would be day before yesterday
+            yesterday_close = float(historicals[-2]['close_price'])
+            return yesterday_close
+        return None
+    except Exception as e:
+        print(f"Error getting previous close price for {ticker}: {e}")
+        return None
+
 def get_name_by_symbol(ticker):
     return get_name_by_symbol_cached(ticker)
 
@@ -430,6 +444,13 @@ def get_data_for_account(account_name, force_refresh=False):
                 # Get historical metrics (RSI, P/S, P/E min/max)
                 historical_metrics = get_historical_metrics(ticker)
 
+                # Get yesterday's closing price for accurate day change calculation
+                previous_close = get_previous_close_price(ticker)
+                if previous_close and previous_close > 0:
+                    intraday_pct_change = (latest_price - previous_close) * 100 / previous_close
+                else:
+                    intraday_pct_change = 0
+
                 all_positions_data.append({
                     "type": "stock",
                     "ticker": ticker,
@@ -442,7 +463,7 @@ def get_data_for_account(account_name, force_refresh=False):
                     "strike": None, "expiry": None, "option_type": None,
                     "earnedPremium": premiums_by_ticker.get(ticker, 0.0),
                     "name": get_name_by_symbol(ticker),
-                    "intraday_percent_change": (latest_price - float(pos['intraday_average_buy_price'])) * 100 / float(pos['intraday_average_buy_price']) if float(pos['intraday_average_buy_price']) != 0 else 0,
+                    "intraday_percent_change": intraday_pct_change,
                     "pe_ratio": float(fundamentals.get('pe_ratio')) if fundamentals.get('pe_ratio') else 0.0,
                     "portfolio_percent": (market_value / total_equity) * 100 if total_equity > 0 else 0,
                     "high_52_weeks": high_52_weeks,
